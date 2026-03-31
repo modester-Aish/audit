@@ -13,7 +13,7 @@ from .storage import list_run_history, load_archived_run, load_state
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.0"
+PORTAL_VERSION = "2.3.2"
 
 
 @bp.app_template_filter("index_explain")
@@ -606,9 +606,11 @@ def api_health():
 def api_run_status():
     state = load_state()
     run = state.get("run") or {}
+    st = current_app.config["AUDIT_SETTINGS"]
     return jsonify(
         run=run,
         target_base_url=(state.get("target_base_url") or "").strip(),
+        max_pages=int(getattr(st, "max_pages", 5000) or 5000),
     )
 
 

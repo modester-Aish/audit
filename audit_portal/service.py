@@ -81,6 +81,7 @@ def start_crawl_async() -> int:
         if (prev.get("run") or {}).get("status") == "running":
             prev["run"]["status"] = "cancelled"
             prev["run"]["finished_at"] = datetime.utcnow().isoformat()
+            prev["run"]["current_url"] = None
             save_state(prev)
 
         state = wipe_results_keep_target()
@@ -117,6 +118,7 @@ def _crawl_run(run_id: int) -> None:
             crawl_delay_seconds=settings.crawl_delay_seconds,
             use_sitemap_seed=settings.use_sitemap_seed,
             sitemap_seed_cap=min(settings.max_pages, settings.sitemap_seed_cap),
+            try_parse_html_on_error=settings.try_parse_html_on_error,
         )
 
         pages_discovered = 0
@@ -125,6 +127,8 @@ def _crawl_run(run_id: int) -> None:
         state = load_state()
         state["pages"] = []
         state["links"] = []
+        state["run"]["current_url"] = base_url or "(resolving queue…)"
+        save_state(state)
 
         for res in crawler.crawl():
             # If user started a newer crawl, stop this one immediately.
@@ -193,12 +197,12 @@ def _crawl_run(run_id: int) -> None:
 
             state["pages"].append(page)
 
-            # Save progress frequently so you can see data appearing early.
-            if pages_discovered == 1 or pages_discovered % 5 == 0:
-                state["run"]["pages_discovered"] = pages_discovered
-                state["run"]["pages_fetched"] = pages_fetched
-                save_state(state)
+            state["run"]["pages_discovered"] = pages_discovered
+            state["run"]["pages_fetched"] = pages_fetched
+            state["run"]["current_url"] = res.url
+            save_state(state)
 
+        state["run"]["current_url"] = None
         state["run"]["status"] = "done"
         state["run"]["finished_at"] = datetime.utcnow().isoformat()
         state["run"]["pages_discovered"] = pages_discovered
@@ -211,6 +215,7 @@ def _crawl_run(run_id: int) -> None:
         state["run"]["status"] = "error"
         state["run"]["finished_at"] = datetime.utcnow().isoformat()
         state["run"]["error_message"] = str(e)
+        state["run"]["current_url"] = None
         save_state(state)
         archive_completed_run(load_state())
 

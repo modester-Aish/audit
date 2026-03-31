@@ -175,12 +175,59 @@
         overflow: hidden;
         max-width: 280px;
       }
+      .progress-track.live-crawl-bar {
+        height: 10px;
+        max-width: none;
+        width: 100%;
+      }
       .progress-bar {
         height: 100%;
         background: var(--accent);
         border-radius: 4px;
         transition: width 0.25s ease;
         width: 0%;
+      }
+      .live-crawl-strip {
+        margin: -4px 0 20px;
+        padding: 12px 14px;
+        border-radius: var(--radius);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        background: rgba(56, 189, 248, 0.07);
+      }
+      .live-crawl-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .live-pulse-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45);
+        animation: live-pulse 1.15s ease-in-out infinite;
+      }
+      @keyframes live-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.35); }
+        50% { opacity: 0.85; transform: scale(0.94); box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+      }
+      .live-progress-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .live-current-wrap {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.4;
+        margin-bottom: 10px;
+        word-break: break-all;
+      }
+      .live-current-wrap .mono {
+        color: var(--text);
       }
       .exec-summary {
         display: grid;
@@ -327,6 +374,24 @@
         <span class="small muted">v{{ portal_version }}</span>
       </div>
 
+      {% if latest_run and latest_run.status == 'running' and not viewing_archived %}
+        <div class="live-crawl-strip" id="live-crawl-strip">
+          <div class="live-crawl-head">
+            <span class="live-pulse-dot" aria-hidden="true"></span>
+            <span class="live-progress-label" id="live-progress-label">
+              Crawling… <span id="live-count-pct">{{ latest_run.pages_discovered or 0 }}</span> / <span id="live-cap">{{ settings.max_pages|default(5000) }}</span> pages
+            </span>
+          </div>
+          <div class="live-current-wrap">
+            <span class="muted">Current URL</span>
+            <span class="mono" id="live-current-url">{{ latest_run.current_url or '—' }}</span>
+          </div>
+          <div class="progress-track live-crawl-bar" title="Progress toward max pages cap">
+            <div class="progress-bar" id="live-progress-bar"></div>
+          </div>
+        </div>
+      {% endif %}
+
       {% block content %}{% endblock %}
     </div>
     {% if latest_run and latest_run.status == 'running' and not viewing_archived %}
@@ -335,6 +400,10 @@
         var bar = document.getElementById("live-progress-bar");
         var dEl = document.getElementById("live-discovered");
         var fEl = document.getElementById("live-fetched");
+        var urlEl = document.getElementById("live-current-url");
+        var countPctEl = document.getElementById("live-count-pct");
+        var capEl = document.getElementById("live-cap");
+        var pollMs = 950;
         function tick() {
           fetch("{{ url_for('routes.api_run_status') }}", { credentials: "same-origin" })
             .then(function (r) { return r.json(); })
@@ -342,19 +411,27 @@
               var run = j.run || {};
               var disc = run.pages_discovered || 0;
               var fetchc = run.pages_fetched || 0;
+              var cap = parseInt(j.max_pages, 10) || 5000;
               if (dEl) dEl.textContent = disc;
               if (fEl) fEl.textContent = fetchc;
+              if (urlEl) {
+                var cu = run.current_url;
+                urlEl.textContent = cu != null && String(cu).length ? cu : "—";
+                if (cu) urlEl.setAttribute("title", cu);
+                else urlEl.removeAttribute("title");
+              }
+              if (countPctEl) countPctEl.textContent = disc;
+              if (capEl) capEl.textContent = cap;
               if (bar) {
-                var cap = {{ settings.max_pages|default(5000) }};
                 var pct = cap > 0 ? Math.min(100, (disc / cap) * 100) : 0;
                 bar.style.width = pct.toFixed(1) + "%";
               }
-              if (run.status === "running") setTimeout(tick, 2000);
+              if (run.status === "running") setTimeout(tick, pollMs);
               else location.reload();
             })
-            .catch(function () { setTimeout(tick, 4000); });
+            .catch(function () { setTimeout(tick, 2200); });
         }
-        setTimeout(tick, 1500);
+        setTimeout(tick, 350);
       })();
     </script>
     {% endif %}

@@ -40,6 +40,7 @@ def new_state() -> Dict[str, Any]:
             "error_message": None,
             "pages_discovered": 0,
             "pages_fetched": 0,
+            "current_url": None,  # URL being fetched while status==running
         },
         "pages": [],  # list[dict]
         "links": [],  # list[dict] (body internal links + anchors)

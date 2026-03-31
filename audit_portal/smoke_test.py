@@ -4,6 +4,7 @@ from __future__ import annotations
 from audit_portal import create_app
 from audit_portal.crawler import (
     extract_body_internal_links,
+    extract_next_data_urls,
     extract_page_meta,
     format_index_explanation,
     is_indexable,
@@ -104,6 +105,14 @@ def main() -> None:
 
     nu = normalize_url("https://ex.com/a/")
     ok("normalize_url", nu.endswith("/a") or "ex.com" in nu, nu)
+
+    nd = (
+        '<!doctype html><script id="__NEXT_DATA__" type="application/json">'
+        '{"props":{"x":"/segment/about","y":"https://ex.com/abs"}}'
+        "</script>"
+    )
+    nurls = extract_next_data_urls(nd, "https://ex.com/start", "https://ex.com")
+    ok("next_data urls", len(nurls) >= 2, repr(nurls))
 
     ok("jinja filter index_explain", "index_explain" in app.jinja_env.filters, "")
 

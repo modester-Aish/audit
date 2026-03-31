@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -310,6 +311,76 @@ def extract_all_internal_links(html: str, page_url: str, base_url: str) -> Set[s
     return urls
 
 
+def _looks_like_html(text: str) -> bool:
+    """True if body is likely HTML (including minimal SPAs with __NEXT_DATA__)."""
+    if not text or len(text) < 12:
+        return False
+    head = text.lstrip()[:8000]
+    low = head.lower()
+    if low.startswith("<!doctype html") or "<html" in low[:800]:
+        return True
+    if "__next_data__" in low:
+        return True
+    return False
+
+
+def extract_sitemap_hrefs_from_html(html: str, page_url: str) -> List[str]:
+    """<link rel=\"sitemap\" href=\"...\"> on the homepage."""
+    out: List[str] = []
+    try:
+        soup = BeautifulSoup(html, "lxml")
+        for ln in soup.select('link[rel="sitemap"][href]'):
+            u = (ln.get("href") or "").strip()
+            if not u:
+                continue
+            abs_u = normalize_url(urldefrag(urljoin(page_url, u))[0])
+            if is_http_url(abs_u):
+                out.append(abs_u)
+    except Exception:
+        pass
+    return out
+
+
+def extract_next_data_urls(html: str, page_url: str, base_url: str) -> Set[str]:
+    """Harvest same-site URLs embedded in Next.js __NEXT_DATA__ JSON (common when <a> tags are sparse)."""
+    out: Set[str] = set()
+    try:
+        soup = BeautifulSoup(html, "lxml")
+        el = soup.select_one("script#__NEXT_DATA__")
+        raw = (el.string or el.get_text() or "").strip() if el else ""
+        if not raw:
+            return out
+        data = json.loads(raw)
+    except Exception:
+        return out
+
+    nodes = 0
+    max_nodes = 80_000
+    stack: List[Any] = [data]
+    while stack and nodes < max_nodes:
+        obj = stack.pop()
+        nodes += 1
+        if isinstance(obj, str):
+            s = obj.strip()
+            if not s or len(s) > 2048:
+                continue
+            if s.startswith("/") and not s.startswith("//"):
+                path0 = s.split("?", 1)[0].split("#", 1)[0]
+                if 1 <= len(path0) <= 2000 and "{" not in path0 and "}" not in path0:
+                    u = normalize_url(urljoin(page_url, s.split("#", 1)[0]))
+                    if same_site(u, base_url):
+                        out.add(u)
+            elif is_http_url(s):
+                u = normalize_url(urldefrag(s)[0])
+                if same_site(u, base_url):
+                    out.add(u)
+        elif isinstance(obj, dict):
+            stack.extend(obj.values())
+        elif isinstance(obj, list):
+            stack.extend(obj)
+    return out
+
+
 def _xml_local_name(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[-1].lower()
@@ -349,6 +420,16 @@ def discover_urls_from_sitemaps(
         return []
     base = normalize_url(base_url.rstrip("/"))
     roots: List[str] = []
+    html_accept = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
+    try:
+        home = session.get(base, timeout=timeout, headers=html_accept)
+        if home.status_code == 200 and home.text and _looks_like_html(home.text):
+            for h in extract_sitemap_hrefs_from_html(home.text, home.url or base):
+                roots.append(h)
+    except Exception:
+        pass
     try:
         rr = session.get(urljoin(base, "/robots.txt"), timeout=timeout)
         if rr.status_code == 200 and rr.text:
@@ -360,7 +441,16 @@ def discover_urls_from_sitemaps(
                         roots.append(normalize_url(urldefrag(u)[0]))
     except Exception:
         pass
-    for path in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
+    for path in (
+        "sitemap.xml",
+        "sitemap_index.xml",
+        "sitemap-index.xml",
+        "wp-sitemap.xml",
+        "post-sitemap.xml",
+        "page-sitemap.xml",
+        "product-sitemap.xml",
+        "sitemap/sitemap.xml",
+    ):
         roots.append(normalize_url(urljoin(base + "/", path)))
 
     seen_roots: Set[str] = set()
@@ -434,6 +524,7 @@ class SimpleCrawler:
         crawl_delay_seconds: float = 0.0,
         use_sitemap_seed: bool = True,
         sitemap_seed_cap: int = 5000,
+        try_parse_html_on_error: bool = True,
     ) -> None:
         self.base_url = normalize_url(base_url.rstrip("/"))
         self.max_pages = max_pages
@@ -442,11 +533,27 @@ class SimpleCrawler:
         self.crawl_delay_seconds = crawl_delay_seconds
         self.use_sitemap_seed = use_sitemap_seed
         self.sitemap_seed_cap = max(0, int(sitemap_seed_cap))
+        self.try_parse_html_on_error = bool(try_parse_html_on_error)
 
         self.session = requests.Session()
         self.session.headers.update(
             {"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
         )
+
+    def _extract_html_body(
+        self, raw: str, status_code: Optional[int], content_type: str
+    ) -> str:
+        if not raw:
+            return ""
+        ct = (content_type or "").strip().lower()
+        if ct.startswith("text/html") or ct.startswith("application/xhtml"):
+            return raw
+        if _looks_like_html(raw):
+            return raw
+        if self.try_parse_html_on_error and status_code is not None and status_code >= 400:
+            if _looks_like_html(raw):
+                return raw
+        return ""
 
     def fetch(self, url: str) -> FetchResult:
         url = normalize_url(url)
@@ -465,8 +572,9 @@ class SimpleCrawler:
             content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             x_robots_tag = parse_x_robots_tag(resp.headers.get("X-Robots-Tag", ""))
 
-            if content_type.startswith("text/html") and resp.text:
-                html = resp.text
+            raw = resp.text or ""
+            html = self._extract_html_body(raw, status_code, content_type)
+            if html:
                 soup = BeautifulSoup(html, "lxml")
                 meta_robots = extract_meta_robots(soup)
                 link = soup.select_one('link[rel="canonical"][href]')
@@ -524,9 +632,10 @@ class SimpleCrawler:
             result = self.fetch(url)
             yield result
 
-            # Discover more URLs only from HTML pages
-            if result.html and (result.content_type.startswith("text/html") or result.content_type == ""):
+            # Discover more URLs from HTML (anchors + Next.js __NEXT_DATA__, even if MIME type is wrong)
+            if result.html:
                 discovered = extract_all_internal_links(result.html, result.url, self.base_url)
+                discovered |= extract_next_data_urls(result.html, result.url, self.base_url)
                 for d in discovered:
                     if d not in seen and d not in queued:
                         queued.add(d)

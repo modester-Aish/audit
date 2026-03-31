@@ -4,110 +4,359 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="robots" content="noindex,nofollow,noarchive" />
-    <title>Audit Portal</title>
+    <title>{% block title %}Audit Portal{% endblock %}</title>
     <style>
       :root {
-        --bg: #0b1220;
+        --bg: #070b12;
+        --sidebar: #0c1222;
         --panel: #111a2e;
         --panel2: #0f172a;
         --text: #e5e7eb;
-        --muted: #9ca3af;
-        --accent: #60a5fa;
-        --border: #24314f;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --accent-dim: rgba(56, 189, 248, 0.15);
+        --border: #1e293b;
         --good: #34d399;
         --bad: #f87171;
         --warn: #fbbf24;
+        --radius: 12px;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-        background: radial-gradient(1200px 600px at 10% 0%, #122049 0%, var(--bg) 60%);
+        min-height: 100vh;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
         color: var(--text);
+        display: flex;
       }
       a { color: var(--accent); text-decoration: none; }
       a:hover { text-decoration: underline; }
-      .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
-      .topbar {
-        display: flex; gap: 12px; align-items: center; justify-content: space-between;
-        margin-bottom: 18px;
+      .sidebar {
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        padding: 20px 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
       }
-      .brand { font-weight: 700; letter-spacing: 0.2px; }
+      .sidebar-brand {
+        padding: 0 20px 20px;
+        font-weight: 800;
+        font-size: 15px;
+        letter-spacing: -0.02em;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 12px;
+      }
+      .sidebar-brand span {
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .nav a {
+        display: block;
+        padding: 10px 20px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 500;
+        border-left: 3px solid transparent;
+      }
+      .nav a:hover { background: var(--accent-dim); color: var(--text); text-decoration: none; }
+      .nav a.active {
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-left-color: var(--accent);
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        padding: 24px 28px 48px;
+      }
+      .top-strip {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        justify-content: space-between;
+      }
+      .run-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
       .panel {
-        background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+        background: linear-gradient(165deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.5));
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 16px;
+        border-radius: var(--radius);
+        padding: 16px 18px;
       }
       .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
       .card { grid-column: span 3; }
-      .card h3 { margin: 0 0 6px; font-size: 14px; color: var(--muted); font-weight: 600; }
-      .card .big { font-size: 26px; font-weight: 800; }
-      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--muted); }
-      .pill.good { color: var(--good); border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.06); }
-      .pill.bad { color: var(--bad); border-color: rgba(248,113,113,0.35); background: rgba(248,113,113,0.06); }
-      .pill.warn { color: var(--warn); border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.06); }
-      form.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+      @media (max-width: 1100px) {
+        .card { grid-column: span 6; }
+      }
+      @media (max-width: 720px) {
+        body { flex-direction: column; }
+        .sidebar { width: 100%; min-height: 0; flex-direction: row; flex-wrap: wrap; padding: 12px; }
+        .sidebar-brand { border: none; margin: 0; padding: 8px 12px; }
+        .nav { display: flex; flex-wrap: wrap; gap: 4px; }
+        .nav a { border-left: none; border-radius: 8px; padding: 8px 12px; }
+        .card { grid-column: span 12; }
+      }
+      .card h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+      .card .big { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+      .pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .pill.good { color: var(--good); border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.08); }
+      .pill.bad { color: var(--bad); border-color: rgba(248,113,113,0.35); background: rgba(248,113,113,0.08); }
+      .pill.warn { color: var(--warn); border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.08); }
+      form.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+      label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
       input[type="text"], select {
-        width: 260px;
-        padding: 10px 10px;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        background: rgba(15,23,42,0.7);
-        color: var(--text);
-      }
-      button {
+        min-width: 200px;
         padding: 10px 12px;
-        border-radius: 10px;
+        border-radius: 8px;
         border: 1px solid var(--border);
-        background: rgba(96,165,250,0.12);
+        background: rgba(15,23,42,0.85);
         color: var(--text);
-        cursor: pointer;
-        font-weight: 650;
+        font-size: 14px;
       }
-      button:hover { border-color: rgba(96,165,250,0.6); }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(36,49,79,0.7); font-size: 13px; vertical-align: top; }
-      th { color: var(--muted); font-weight: 700; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      button, .btn {
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--accent-dim);
+        color: var(--accent);
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      button:hover, .btn:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      table.data { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; margin: 0 -6px; }
+      th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
       .muted { color: var(--muted); }
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-      .right { margin-left: auto; }
       .small { font-size: 12px; color: var(--muted); }
       .anchors { display: flex; flex-wrap: wrap; gap: 6px; }
+      .banner-warn {
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--warn);
+        padding: 10px 14px;
+        border-radius: var(--radius);
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+      .banner-info {
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: var(--text);
+        padding: 10px 14px;
+        border-radius: var(--radius);
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+      .progress-track {
+        height: 6px;
+        background: var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+        max-width: 280px;
+      }
+      .progress-bar {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 4px;
+        transition: width 0.25s ease;
+        width: 0%;
+      }
+      .exec-summary {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 28px;
+        align-items: start;
+        margin-top: 14px;
+      }
+      @media (max-width: 960px) {
+        .exec-summary { grid-template-columns: 1fr; }
+      }
+      .exec-health {
+        display: flex;
+        gap: 22px;
+        align-items: flex-start;
+      }
+      .health-score {
+        font-size: clamp(2.5rem, 6vw, 3.25rem);
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.05em;
+        min-width: 4.5rem;
+        text-align: center;
+      }
+      .health-tone-good { color: var(--good); }
+      .health-tone-warn { color: var(--warn); }
+      .health-tone-bad { color: var(--bad); }
+      .health-tone-muted { color: var(--muted); font-size: 2rem; }
+      .health-grade { font-weight: 700; font-size: 1.05rem; }
+      .http-stack {
+        display: flex;
+        height: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        width: 100%;
+        max-width: 520px;
+        background: var(--border);
+      }
+      .http-stack-seg {
+        display: block;
+        height: 100%;
+        min-width: 3px;
+        transition: opacity 0.15s;
+      }
+      .http-stack:hover .http-stack-seg { opacity: 0.92; }
+      .http-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        margin-top: 12px;
+      }
+      .http-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .http-legend i {
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        display: inline-block;
+      }
+      .insights-title { margin: 0 0 6px; font-size: 1.05rem; font-weight: 700; }
+      .insights-list { list-style: none; padding: 0; margin: 14px 0 0; }
+      .insight {
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        border-left-width: 4px;
+        background: rgba(255,255,255,0.03);
+      }
+      .insight-critical { border-left-color: var(--bad); }
+      .insight-warning { border-left-color: var(--warn); }
+      .insight-info { border-left-color: var(--accent); }
+      .insight-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+      .insight-detail { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 8px; }
+      .insight-action { font-size: 13px; font-weight: 600; }
+      table.data thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #0b1220;
+        box-shadow: 0 1px 0 var(--border);
+      }
+      table.data tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+      table.data tbody tr:hover { background: rgba(56, 189, 248, 0.06); }
+      {% block extra_styles %}{% endblock %}
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <div class="topbar">
-        <div class="brand">Website Audit Portal</div>
-        <div class="row right">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        Audit Portal
+        <span>Technical &amp; on-page crawl</span>
+      </div>
+      <nav class="nav">
+        <a href="{{ url_for('routes.dashboard') }}" class="{{ 'active' if request.endpoint == 'routes.dashboard' and not viewing_archived else '' }}">Overview</a>
+        <a href="{{ url_for('routes.run_history') }}" class="{{ 'active' if request.endpoint == 'routes.run_history' else '' }}">Run history</a>
+        <a href="{{ url_for('routes.dashboard') }}#exports" class="">Exports</a>
+        <a href="{{ url_for('routes.settings_page') }}" class="{{ 'active' if request.endpoint == 'routes.settings_page' else '' }}">Configuration</a>
+      </nav>
+    </aside>
+    <div class="main">
+      {% if viewing_archived %}
+        <div class="banner-info">
+          Viewing archived run #{{ archived_run_id }}. <a href="{{ url_for('routes.dashboard') }}">Return to live data</a>
+        </div>
+      {% endif %}
+      <div class="top-strip">
+        <div class="run-meta">
           {% if latest_run %}
-            <span class="pill {% if latest_run.status == 'done' %}good{% elif latest_run.status == 'error' %}bad{% else %}warn{% endif %}">
+            <span class="pill {% if latest_run.status == 'done' %}good{% elif latest_run.status == 'error' %}bad{% elif latest_run.status == 'running' %}warn{% else %}{% endif %}">
               Run #{{ latest_run.id }} · {{ latest_run.status }}
             </span>
             <span class="small">
               {% if latest_run.finished_at %}
                 finished {{ latest_run.finished_at }}
-              {% else %}
+              {% elif latest_run.started_at %}
                 started {{ latest_run.started_at }}
               {% endif %}
             </span>
             <span class="pill">
-              discovered {{ latest_run.pages_discovered or 0 }} · fetched {{ latest_run.pages_fetched or 0 }}
+              <span id="live-discovered">{{ latest_run.pages_discovered or 0 }}</span> discovered ·
+              <span id="live-fetched">{{ latest_run.pages_fetched or 0 }}</span> fetched
             </span>
+            {% if latest_run.status == 'running' and not viewing_archived %}
+              <div class="progress-track" title="Live progress (pages discovered)">
+                <div class="progress-bar" id="live-progress-bar"></div>
+              </div>
+            {% endif %}
             {% if latest_run.error_message %}
-              <span class="pill bad">error: {{ latest_run.error_message }}</span>
+              <span class="pill bad">{{ latest_run.error_message[:120] }}{% if latest_run.error_message|length > 120 %}…{% endif %}</span>
             {% endif %}
           {% endif %}
-          <form method="post" action="/audit/recrawl">
-            <button type="submit">Recrawl now</button>
-          </form>
+          {% if not viewing_archived %}
+            <form method="post" action="{{ url_for('routes.recrawl') }}" style="display:inline;">
+              <button type="submit" {% if not target_base_url|default('') %}disabled title="Set base URL first"{% endif %}>Recrawl now</button>
+            </form>
+          {% endif %}
         </div>
+        <span class="small muted">v{{ portal_version }}</span>
       </div>
 
       {% block content %}{% endblock %}
     </div>
+    {% if latest_run and latest_run.status == 'running' and not viewing_archived %}
+    <script>
+      (function () {
+        var bar = document.getElementById("live-progress-bar");
+        var dEl = document.getElementById("live-discovered");
+        var fEl = document.getElementById("live-fetched");
+        function tick() {
+          fetch("{{ url_for('routes.api_run_status') }}", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              var run = j.run || {};
+              var disc = run.pages_discovered || 0;
+              var fetchc = run.pages_fetched || 0;
+              if (dEl) dEl.textContent = disc;
+              if (fEl) fEl.textContent = fetchc;
+              if (bar) {
+                var cap = {{ settings.max_pages|default(5000) }};
+                var pct = cap > 0 ? Math.min(100, (disc / cap) * 100) : 0;
+                bar.style.width = pct.toFixed(1) + "%";
+              }
+              if (run.status === "running") setTimeout(tick, 2000);
+              else location.reload();
+            })
+            .catch(function () { setTimeout(tick, 4000); });
+        }
+        setTimeout(tick, 1500);
+      })();
+    </script>
+    {% endif %}
   </body>
 </html>

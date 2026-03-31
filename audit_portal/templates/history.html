@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block title %}Run history · Audit Portal{% endblock %}
+
+{% block content %}
+  <div class="panel">
+    <h2 style="margin:0 0 8px; font-size:18px;">Completed crawl runs</h2>
+    <p class="muted" style="margin:0 0 16px; font-size:14px;">
+      Each finished or failed crawl is snapshotted so you can revisit results without affecting the live workspace.
+    </p>
+    {% if not runs %}
+      <p class="muted">No archived runs yet. Finish a crawl to see it listed here.</p>
+    {% else %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th>Pages</th>
+              <th>Finished</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in runs %}
+              <tr>
+                <td class="mono">#{{ r.id }}</td>
+                <td class="mono small">{{ r.target_base_url or '—' }}</td>
+                <td>
+                  <span class="pill {% if r.status == 'done' %}good{% elif r.status == 'error' %}bad{% else %}warn{% endif %}">{{ r.status }}</span>
+                  {% if r.error_message %}<div class="small muted">{{ r.error_message[:80] }}{% if r.error_message|length > 80 %}…{% endif %}</div>{% endif %}
+                </td>
+                <td>{{ r.pages_count|default(0) }}</td>
+                <td class="small muted">{{ r.finished_at or '—' }}</td>
+                <td><a href="{{ url_for('routes.dashboard', run=r.id) }}">Open</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

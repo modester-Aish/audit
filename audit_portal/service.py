@@ -7,8 +7,15 @@ from typing import Any, Dict, Optional
 
 from flask import current_app
 
-from .crawler import SimpleCrawler, extract_body_internal_links, is_indexable, normalize_url
-from .storage import load_state, save_state, set_target_base_url as store_set_target, wipe_results_keep_target
+from .crawler import (
+    SimpleCrawler,
+    extract_body_internal_links,
+    extract_page_meta,
+    format_index_explanation,
+    is_indexable,
+    normalize_url,
+)
+from .storage import archive_completed_run, load_state, save_state, set_target_base_url as store_set_target, wipe_results_keep_target
 
 _crawl_lock = threading.Lock()
 _scheduler_started = False
@@ -142,12 +149,31 @@ def _crawl_run(run_id: int) -> None:
                 "x_robots_tag": x_robots,
                 "indexable": bool(idx),
                 "index_reason": reason,
+                "index_explanation": format_index_explanation(
+                    reason,
+                    status_code=res.status_code,
+                    meta_robots=meta_robots,
+                    x_robots_tag=x_robots,
+                ),
                 "body_internal_link_count": 0,
                 "has_body_internal_links": False,
+                "title": None,
+                "meta_description": None,
+                "og_title": None,
+                "og_description": None,
+                "twitter_title": None,
+                "twitter_description": None,
+                "h1": None,
+                "display_title": None,
+                "display_description": None,
+                "title_source": None,
+                "description_source": None,
+                "response_time_ms": res.response_time_ms,
             }
 
             # Body-only internal links + anchors
             if res.html:
+                page.update(extract_page_meta(res.html))
                 links = extract_body_internal_links(res.html, res.url, base_url)
                 page["body_internal_link_count"] = len(links)
                 page["has_body_internal_links"] = len(links) > 0
@@ -176,6 +202,7 @@ def _crawl_run(run_id: int) -> None:
         state["run"]["pages_discovered"] = pages_discovered
         state["run"]["pages_fetched"] = pages_fetched
         save_state(state)
+        archive_completed_run(load_state())
 
     except Exception as e:
         state = load_state()
@@ -183,4 +210,5 @@ def _crawl_run(run_id: int) -> None:
         state["run"]["finished_at"] = datetime.utcnow().isoformat()
         state["run"]["error_message"] = str(e)
         save_state(state)
+        archive_completed_run(load_state())
 

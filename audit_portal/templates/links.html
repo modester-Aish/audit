@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Body links · Audit Portal{% endblock %}
+
+{% block content %}
+  <div class="panel">
+    <h2 style="margin:0 0 8px; font-size:18px;">Body internal links</h2>
+    <p class="muted mono" style="font-size:13px; word-break:break-all;">From: {{ page_url or '—' }}</p>
+    <p class="small" style="margin:12px 0;">
+      <a href="{{ url_for('routes.dashboard', run=run_id) if run_id else url_for('routes.dashboard') }}">← Back to overview</a>
+    </p>
+    <p class="small muted">Total: <strong style="color:var(--text)">{{ items|length }}</strong> links (content body; nav/header/footer stripped).</p>
+    <div class="table-wrap" style="margin-top:14px;">
+      <table class="data">
+        <thead>
+          <tr><th>To URL</th><th>Anchor text</th></tr>
+        </thead>
+        <tbody>
+          {% for it in items %}
+            <tr>
+              <td class="mono"><a href="{{ it.to_url }}" target="_blank" rel="noreferrer">{{ it.to_url }}</a></td>
+              <td>{{ it.anchor_text or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

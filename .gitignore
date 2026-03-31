@@ -1,5 +1,6 @@
 .env
 data/latest.json
+data/runs/
 __pycache__/
 *.pyc
 .venv/

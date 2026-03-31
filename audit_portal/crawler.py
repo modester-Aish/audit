@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urldefrag, urlparse, urlunparse
 
 import requests
@@ -11,6 +11,90 @@ from bs4 import BeautifulSoup
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _meta_name_ci(soup: BeautifulSoup, name: str) -> Optional[str]:
+    want = name.lower()
+    for meta in soup.select("meta[name]"):
+        if ((meta.get("name") or "").strip().lower() == want) and meta.get("content") is not None:
+            v = (meta.get("content") or "").strip()
+            if v:
+                return v
+    return None
+
+
+def _meta_property_ci(soup: BeautifulSoup, prop: str) -> Optional[str]:
+    want = prop.lower()
+    for meta in soup.select("meta[property]"):
+        if ((meta.get("property") or "").strip().lower() == want) and meta.get("content") is not None:
+            v = (meta.get("content") or "").strip()
+            if v:
+                return v
+    return None
+
+
+def _itemprop_description(soup: BeautifulSoup) -> Optional[str]:
+    for meta in soup.select('meta[itemprop="description"]'):
+        v = (meta.get("content") or "").strip()
+        if v:
+            return v
+    return None
+
+
+def extract_page_meta(html: str) -> Dict[str, Any]:
+    """
+    Extract title tag, meta description, Open Graph & Twitter fallbacks, H1.
+    display_* fields prefer <title> / standard meta, then og / twitter (common for SPAs
+    that only set social tags). See also: Open Graph / Twitter Card tag practices.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    title_el = soup.title
+    title_tag = title_el.get_text(strip=True) if title_el else None
+    if title_tag == "":
+        title_tag = None
+
+    meta_desc = _meta_name_ci(soup, "description") or _itemprop_description(soup)
+    og_title = _meta_property_ci(soup, "og:title")
+    og_desc = _meta_property_ci(soup, "og:description")
+    tw_title = _meta_name_ci(soup, "twitter:title")
+    tw_desc = _meta_name_ci(soup, "twitter:description")
+
+    h1_el = soup.select_one("h1")
+    h1 = h1_el.get_text(" ", strip=True) if h1_el else None
+    if h1 == "":
+        h1 = None
+
+    display_title = title_tag or og_title or tw_title
+    title_source: Optional[str] = None
+    if title_tag:
+        title_source = "title"
+    elif og_title:
+        title_source = "og"
+    elif tw_title:
+        title_source = "twitter"
+
+    display_description = meta_desc or og_desc or tw_desc
+    desc_source: Optional[str] = None
+    if meta_desc:
+        desc_source = "meta"
+    elif og_desc:
+        desc_source = "og"
+    elif tw_desc:
+        desc_source = "twitter"
+
+    return {
+        "title": title_tag,
+        "meta_description": meta_desc,
+        "og_title": og_title,
+        "og_description": og_desc,
+        "twitter_title": tw_title,
+        "twitter_description": tw_desc,
+        "h1": h1,
+        "display_title": display_title,
+        "display_description": display_description,
+        "title_source": title_source,
+        "description_source": desc_source,
+    }
 
 
 def normalize_url(url: str) -> str:
@@ -79,6 +163,94 @@ def is_indexable(status_code: Optional[int], meta_robots: str, x_robots_tag: str
     return True, "indexable"
 
 
+_HTTP_WHY: Dict[int, str] = {
+    204: "HTTP 204 - no content body",
+    301: "HTTP 301 - moved permanently (unusual as final after redirects)",
+    302: "HTTP 302 - found / temporary redirect (unusual as final)",
+    304: "HTTP 304 - not modified (no body to index)",
+    400: "HTTP 400 - bad request",
+    401: "HTTP 401 - unauthorized (login required)",
+    403: "HTTP 403 - forbidden (crawlers or guests blocked)",
+    404: "HTTP 404 - not found",
+    405: "HTTP 405 - method not allowed",
+    408: "HTTP 408 - request timeout",
+    410: "HTTP 410 - gone (removal signal)",
+    429: "HTTP 429 - too many requests (rate limited)",
+    500: "HTTP 500 - internal server error",
+    502: "HTTP 502 - bad gateway",
+    503: "HTTP 503 - service unavailable",
+    504: "HTTP 504 - gateway timeout",
+}
+
+
+def format_index_explanation(
+    reason_code: str,
+    *,
+    status_code: Optional[int] = None,
+    meta_robots: str = "",
+    x_robots_tag: str = "",
+) -> str:
+    """
+    Human-readable sentence: why this URL is treated as indexable or not (heuristic).
+    """
+    code = (reason_code or "").strip()
+    if code == "indexable":
+        return (
+            "Likely indexable: HTTP response succeeded and no 'noindex' was found in meta robots or "
+            "X-Robots-Tag. (On-page rule only; not proof the URL is in any search engine index.)"
+        )
+    if code == "no_response":
+        return (
+            "Not indexable: no HTTP response (connection failed, timeout, DNS/SSL error, or blocked fetch). "
+            "Search engines normally have nothing successful to index."
+        )
+    if code.startswith("http_"):
+        try:
+            sc = int(code.split("_", 1)[1])
+        except (ValueError, IndexError):
+            sc = status_code
+        if sc is not None:
+            hint = _HTTP_WHY.get(sc, f"HTTP {sc} - non-success or empty response")
+            return f"Not indexable: {hint}. Error or non-content status codes are usually not indexed."
+        return "Not indexable: HTTP error or unusual status; typically skipped for indexing."
+    if code == "noindex":
+        srcs: List[str] = []
+        if "noindex" in (meta_robots or "").lower():
+            srcs.append("HTML <meta name=\"robots\"> (or equivalent)")
+        if "noindex" in (x_robots_tag or "").lower():
+            srcs.append("X-Robots-Tag HTTP header")
+        if srcs:
+            where = " and ".join(srcs)
+            verb = "contain" if len(srcs) > 1 else "contains"
+            return (
+                f"Not indexable: {where} {verb} 'noindex', telling crawlers not to index this URL."
+            )
+        return "Not indexable: a 'noindex' directive was detected in page or header signals."
+    if code:
+        return f"Not indexable (code: {code})."
+    return "Unknown indexability signal."
+
+
+def resolve_page_index_explanation(page: Dict[str, Any]) -> str:
+    existing = page.get("index_explanation")
+    if existing:
+        return str(existing)
+    sc_raw = page.get("status_code")
+    sc: Optional[int]
+    if isinstance(sc_raw, int):
+        sc = sc_raw
+    elif sc_raw is not None and str(sc_raw).isdigit():
+        sc = int(str(sc_raw))
+    else:
+        sc = None
+    return format_index_explanation(
+        str(page.get("index_reason") or ""),
+        status_code=sc,
+        meta_robots=str(page.get("meta_robots") or ""),
+        x_robots_tag=str(page.get("x_robots_tag") or ""),
+    )
+
+
 def _strip_layout_sections(soup: BeautifulSoup) -> BeautifulSoup:
     # Remove common non-body sections before link extraction.
     for sel in ["header", "footer", "nav", "aside"]:
@@ -145,6 +317,7 @@ class FetchResult:
     meta_robots: str
     x_robots_tag: str
     canonical_url: str
+    response_time_ms: Optional[int]
     html: str
 
 
@@ -176,8 +349,10 @@ class SimpleCrawler:
         canonical = ""
         meta_robots = ""
 
+        elapsed_ms: Optional[int] = None
         try:
             resp = self.session.get(url, timeout=self.request_timeout_seconds, allow_redirects=True)
+            elapsed_ms = int(resp.elapsed.total_seconds() * 1000)
             status_code = resp.status_code
             content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             x_robots_tag = parse_x_robots_tag(resp.headers.get("X-Robots-Tag", ""))
@@ -192,7 +367,6 @@ class SimpleCrawler:
                     if canonical:
                         canonical = normalize_url(urljoin(url, canonical))
         except Exception:
-            # Keep defaults for error cases.
             pass
 
         return FetchResult(
@@ -202,6 +376,7 @@ class SimpleCrawler:
             meta_robots=meta_robots,
             x_robots_tag=x_robots_tag,
             canonical_url=canonical,
+            response_time_ms=elapsed_ms,
             html=html,
         )
 

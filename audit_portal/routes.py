@@ -1,20 +1,65 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
+from urllib.parse import quote
 
-from flask import Blueprint, current_app, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
 
 from .auth import require_basic_auth
+from .crawler import resolve_page_index_explanation
 from .service import get_target_base_url, set_target_base_url, start_crawl_async
-from .storage import load_state
+from .storage import list_run_history, load_archived_run, load_state
 
 bp = Blueprint("routes", __name__)
+
+PORTAL_VERSION = "2.2.0"
+
+
+@bp.app_template_filter("index_explain")
+def _index_explain_filter(page: Dict[str, Any]) -> str:
+    return resolve_page_index_explanation(page)
+
+
+def _state_for_request() -> Dict[str, Any]:
+    rid = request.args.get("run", type=int)
+    if rid:
+        archived = load_archived_run(rid)
+        if not archived:
+            abort(404)
+        return archived
+    return load_state()
+
+
+def _run_qs() -> str:
+    rid = request.args.get("run", type=int)
+    return f"?run={rid}" if rid else ""
+
+
+@bp.context_processor
+def _inject_run_context() -> Dict[str, Any]:
+    rid = request.args.get("run", type=int)
+    live = load_state()
+    run = live.get("run") or {}
+    st = current_app.config["AUDIT_SETTINGS"]
+    tgt = (live.get("target_base_url") or "").strip().rstrip("/")
+    if not tgt:
+        tgt = (st.base_url or "").strip().rstrip("/")
+    return {
+        "archived_run_id": rid,
+        "viewing_archived": bool(rid),
+        "run_qs": _run_qs(),
+        "portal_version": PORTAL_VERSION,
+        "latest_run": run,
+        "target_base_url": tgt,
+        "settings": st,
+    }
 
 
 @bp.before_request
 def _auth_guard():
-    # Secure & internal: require basic auth for all endpoints.
+    if request.path.rstrip("/").endswith("/api/health"):
+        return None
     settings = current_app.config["AUDIT_SETTINGS"]
     if settings.require_auth:
         resp = require_basic_auth()
@@ -43,6 +88,63 @@ class DashboardFilters:
     anchor: str
 
 
+_PAGE_CSV_HEADER = [
+    "url",
+    "title_tag",
+    "display_title",
+    "title_source",
+    "h1",
+    "meta_description_tag",
+    "display_description",
+    "description_source",
+    "og_title",
+    "og_description",
+    "twitter_title",
+    "twitter_description",
+    "canonical_url",
+    "status_code",
+    "response_time_ms",
+    "content_type",
+    "meta_robots",
+    "x_robots_tag",
+    "indexable",
+    "index_reason",
+    "index_explanation",
+    "body_internal_link_count",
+    "has_body_internal_links",
+]
+
+
+def _page_csv_row(r: Dict[str, Any]) -> List[Any]:
+    disp_t = r.get("display_title") or r.get("title") or ""
+    disp_d = r.get("display_description") or r.get("meta_description") or ""
+    return [
+        r.get("url", ""),
+        r.get("title") or "",
+        disp_t,
+        r.get("title_source") or "",
+        r.get("h1") or "",
+        r.get("meta_description") or "",
+        disp_d,
+        r.get("description_source") or "",
+        r.get("og_title") or "",
+        r.get("og_description") or "",
+        r.get("twitter_title") or "",
+        r.get("twitter_description") or "",
+        r.get("canonical_url") or "",
+        r.get("status_code") or "",
+        r.get("response_time_ms") if r.get("response_time_ms") is not None else "",
+        r.get("content_type") or "",
+        r.get("meta_robots") or "",
+        r.get("x_robots_tag") or "",
+        "1" if r.get("indexable") else "0",
+        r.get("index_reason") or "",
+        r.get("index_explanation") or resolve_page_index_explanation(dict(r)),
+        r.get("body_internal_link_count") or 0,
+        "1" if r.get("has_body_internal_links") else "0",
+    ]
+
+
 def _filtered_pages(state: Dict[str, object], filters: DashboardFilters) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     all_pages: List[Dict[str, object]] = list(state.get("pages") or [])
     all_links: List[Dict[str, object]] = list(state.get("links") or [])
@@ -60,7 +162,19 @@ def _filtered_pages(state: Dict[str, object], filters: DashboardFilters) -> Tupl
     filtered = all_pages
     if filters.q:
         qneedle = filters.q.lower()
-        filtered = [p for p in filtered if qneedle in str(p.get("url", "")).lower()]
+
+        def _matches_q(p: Dict[str, object]) -> bool:
+            if qneedle in str(p.get("url", "")).lower():
+                return True
+            dt = str(p.get("display_title") or p.get("title") or "").lower()
+            if qneedle in dt:
+                return True
+            dd = str(p.get("display_description") or p.get("meta_description") or "").lower()
+            if qneedle in dd:
+                return True
+            return False
+
+        filtered = [p for p in filtered if _matches_q(p)]
     if filters.index == "indexable":
         filtered = [p for p in filtered if p.get("indexable") is True]
     elif filters.index == "non_indexable":
@@ -76,11 +190,252 @@ def _filtered_pages(state: Dict[str, object], filters: DashboardFilters) -> Tupl
     return filtered, all_links
 
 
+def _meta_quality_stats(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _disp_t(p: Dict[str, Any]) -> str:
+        return (str(p.get("display_title") or p.get("title") or "")).strip()
+
+    def _disp_d(p: Dict[str, Any]) -> str:
+        return (str(p.get("display_description") or p.get("meta_description") or "")).strip()
+
+    missing_title = sum(1 for p in pages if not _disp_t(p))
+    missing_desc = sum(1 for p in pages if not _disp_d(p))
+    title_long = sum(1 for p in pages if len(_disp_t(p)) > 60)
+    desc_long = sum(1 for p in pages if len(_disp_d(p)) > 160)
+    return {
+        "missing_title": missing_title,
+        "missing_meta_description": missing_desc,
+        "title_over_60": title_long,
+        "description_over_160": desc_long,
+    }
+
+
+def _dash_url(filters: DashboardFilters, run_id: int | None, **extra: Any) -> str:
+    args: Dict[str, Any] = dict(extra)
+    if filters.q:
+        args["q"] = filters.q
+    if filters.links:
+        args["links"] = filters.links
+    if filters.anchor:
+        args["anchor"] = filters.anchor
+    if run_id is not None:
+        args["run"] = run_id
+    return url_for("routes.dashboard", **args)
+
+
+def _http_status_distribution(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    order = ("2xx", "3xx", "4xx", "5xx", "none", "other")
+    counts = {k: 0 for k in order}
+    for p in pages:
+        sc = p.get("status_code")
+        sci: int | None = None
+        if sc is not None:
+            try:
+                sci = int(sc)
+            except (TypeError, ValueError):
+                sci = None
+        if sci is None and sc is None:
+            counts["none"] += 1
+        elif sci is None:
+            counts["other"] += 1
+        elif 200 <= sci < 300:
+            counts["2xx"] += 1
+        elif 300 <= sci < 400:
+            counts["3xx"] += 1
+        elif 400 <= sci < 500:
+            counts["4xx"] += 1
+        elif 500 <= sci < 600:
+            counts["5xx"] += 1
+        else:
+            counts["other"] += 1
+    total = sum(counts.values()) or 1
+    colors = {
+        "2xx": "#34d399",
+        "3xx": "#38bdf8",
+        "4xx": "#f87171",
+        "5xx": "#dc2626",
+        "none": "#64748b",
+        "other": "#a78bfa",
+    }
+    labels = {
+        "2xx": "2xx success",
+        "3xx": "3xx redirect",
+        "4xx": "4xx client error",
+        "5xx": "5xx server error",
+        "none": "No HTTP response",
+        "other": "Other status",
+    }
+    segments: List[Dict[str, Any]] = []
+    for k in order:
+        c = counts[k]
+        if c == 0:
+            continue
+        segments.append(
+            {
+                "key": k,
+                "label": labels[k],
+                "count": c,
+                "pct": round(100.0 * c / total, 1),
+                "color": colors[k],
+            }
+        )
+    return {"segments": segments, "total": len(pages), "counts": counts}
+
+
+def _health_score(pages: List[Dict[str, Any]], stats: Dict[str, Any]) -> Dict[str, Any]:
+    n = len(pages)
+    if n == 0:
+        return {
+            "score": None,
+            "grade": "—",
+            "tone": "muted",
+            "summary": "Run a crawl to compute a snapshot score from HTTP health, indexability, and title coverage.",
+        }
+    def _ok_http(sc: Any) -> bool:
+        if sc is None:
+            return False
+        try:
+            i = int(sc)
+        except (TypeError, ValueError):
+            return False
+        return 200 <= i < 400
+
+    ok_http = sum(1 for p in pages if _ok_http(p.get("status_code")))
+    indexable = int(stats.get("indexable") or 0)
+    missing_title = int(stats.get("missing_title") or 0)
+    titled = n - missing_title
+    score = int(round(100.0 * (0.36 * ok_http / n + 0.36 * indexable / n + 0.28 * titled / n)))
+    score = max(0, min(100, score))
+    if score >= 82:
+        grade, tone = "A", "good"
+        label = "Strong"
+    elif score >= 68:
+        grade, tone = "B", "good"
+        label = "Good"
+    elif score >= 52:
+        grade, tone = "C", "warn"
+        label = "Fair"
+    elif score >= 35:
+        grade, tone = "D", "warn"
+        label = "Weak"
+    else:
+        grade, tone = "F", "bad"
+        label = "Critical"
+    return {
+        "score": score,
+        "grade": grade,
+        "label": label,
+        "tone": tone,
+        "summary": f"Weighted mix: HTTP 2xx–3xx success ({ok_http}/{n}), indexable URLs ({indexable}/{n}), and pages with any title signal ({titled}/{n}). Not a Google score—internal crawl snapshot only.",
+    }
+
+
+def _dashboard_insights(
+    stats: Dict[str, Any],
+    filters: DashboardFilters,
+    run_id: int | None,
+    http_counts: Dict[str, int],
+) -> List[Dict[str, Any]]:
+    n = int(stats.get("total_pages") or 0)
+    if n <= 0:
+        return []
+    out: List[Dict[str, Any]] = []
+
+    def add(sev: str, title: str, detail: str, href: str, action: str = "Open") -> None:
+        out.append({"severity": sev, "title": title, "detail": detail, "href": href, "action": action})
+
+    ni = int(stats.get("non_indexable") or 0)
+    if ni > 0:
+        add(
+            "critical",
+            "Indexing risk",
+            f"{ni} of {n} URLs look non-indexable (HTTP errors and/or noindex). Fix high-traffic pages first.",
+            _dash_url(filters, run_id, index="non_indexable"),
+        )
+    c4 = int(http_counts.get("4xx") or 0)
+    if c4 > 0:
+        add(
+            "critical",
+            "Client errors (4xx)",
+            f"{c4} URLs return 4xx responses—often not indexed and bad for users.",
+            _dash_url(filters, run_id, index="non_indexable"),
+        )
+    c5 = int(http_counts.get("5xx") or 0)
+    if c5 > 0:
+        add(
+            "critical",
+            "Server errors (5xx)",
+            f"{c5} URLs returned 5xx—investigate stability and crawl budget waste.",
+            _dash_url(filters, run_id, index="non_indexable"),
+        )
+    nr = int(http_counts.get("none") or 0)
+    if nr > 0:
+        add(
+            "critical",
+            "Failed fetches",
+            f"{nr} URLs had no HTTP response (timeout, block, or network).",
+            _dash_url(filters, run_id, index="non_indexable"),
+        )
+    mt = int(stats.get("missing_title") or 0)
+    if mt > 0:
+        add(
+            "warning",
+            "Missing titles",
+            f"{mt} pages have no title tag and no og/twitter title—SERP titles may be poor.",
+            _dash_url(filters, run_id),
+            "Review table",
+        )
+    md = int(stats.get("missing_meta_description") or 0)
+    if md > 0:
+        add(
+            "warning",
+            "Missing descriptions",
+            f"{md} pages lack meta / OG / Twitter description text.",
+            _dash_url(filters, run_id),
+            "Review table",
+        )
+    tl = int(stats.get("title_over_60") or 0)
+    dl = int(stats.get("description_over_160") or 0)
+    if tl > 0 or dl > 0:
+        add(
+            "info",
+            "Snippet length",
+            f"{tl} titles over ~60 chars; {dl} descriptions over ~160. SERPs may truncate.",
+            _dash_url(filters, run_id) + "#exports",
+            "Exports",
+        )
+    low_ix = n - int(stats.get("indexable") or 0)
+    if low_ix == 0 and not out:
+        add(
+            "info",
+            "All URLs indexable (heuristic)",
+            "No HTTP/noindex blocks detected in this crawl snapshot.",
+            _dash_url(filters, run_id, index="indexable"),
+        )
+    return out[:10]
+
+
+def _response_time_stats(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    times = [int(p.get("response_time_ms")) for p in pages if p.get("response_time_ms") is not None]
+    if not times:
+        return {"avg_ms": None, "p95_ms": None}
+    times_sorted = sorted(times)
+    n = len(times_sorted)
+    avg = sum(times_sorted) // n
+    p95_idx = min(n - 1, max(0, int((n - 1) * 0.95)))
+    p95 = times_sorted[p95_idx]
+    return {"avg_ms": avg, "p95_ms": p95}
+
+
 @bp.get("/")
 def dashboard():
     settings = current_app.config["AUDIT_SETTINGS"]
-    target_base_url = get_target_base_url()
-    state = load_state()
+    state = _state_for_request()
+    target_from_state = (state.get("target_base_url") or "").strip()
+    if request.args.get("run", type=int):
+        target_base_url = target_from_state
+    else:
+        target_base_url = target_from_state or get_target_base_url()
+
     run = state.get("run") or {}
 
     filters = DashboardFilters(
@@ -93,18 +448,24 @@ def dashboard():
     all_pages: List[Dict[str, object]] = list(state.get("pages") or [])
     all_links: List[Dict[str, object]] = list(state.get("links") or [])
 
-    pages: List[Dict[str, object]] = []
     stats = {
         "total_pages": len(all_pages),
         "indexable": sum(1 for p in all_pages if p.get("indexable") is True),
         "non_indexable": sum(1 for p in all_pages if p.get("indexable") is False),
         "with_internal_links": sum(1 for p in all_pages if p.get("has_body_internal_links") is True),
     }
+    stats.update(_response_time_stats(all_pages))
+    stats.update(_meta_quality_stats(all_pages))
+
+    all_pages_ns: List[Dict[str, Any]] = [dict(p) for p in all_pages]
+    http_dist = _http_status_distribution(all_pages_ns)
+    health = _health_score(all_pages_ns, stats)
+    run_id_param: int | None = request.args.get("run", type=int)
+    insights = _dashboard_insights(stats, filters, run_id_param, http_dist["counts"])
 
     filtered, all_links_for_filter = _filtered_pages(state, filters)
     pages = filtered[:500]
 
-    # Anchor samples for each page
     for p in pages:
         url = str(p.get("url", ""))
         samples: List[str] = []
@@ -117,7 +478,11 @@ def dashboard():
             if len(samples) >= 12:
                 break
         p["anchor_sample"] = samples
-        p["audit_links_url"] = "/audit/links?url=" + url
+        link = "/audit/links?url=" + quote(url, safe="")
+        rid = request.args.get("run", type=int)
+        if rid:
+            link += "&run=" + str(rid)
+        p["audit_links_url"] = link
 
     return render_template(
         "dashboard.html",
@@ -128,6 +493,9 @@ def dashboard():
         pages=pages,
         stats=stats,
         filtered_count=len(filtered),
+        http_dist=http_dist,
+        health=health,
+        insights=insights,
     )
 
 
@@ -150,40 +518,14 @@ def export_pages_csv():
     import csv
     import io
 
-    state = load_state()
+    state = _state_for_request()
     rows = list(state.get("pages") or [])
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(
-        [
-            "url",
-            "canonical_url",
-            "status_code",
-            "content_type",
-            "meta_robots",
-            "x_robots_tag",
-            "indexable",
-            "index_reason",
-            "body_internal_link_count",
-            "has_body_internal_links",
-        ]
-    )
+    w.writerow(_PAGE_CSV_HEADER)
     for r in rows:
-        w.writerow(
-            [
-                r.get("url", ""),
-                r.get("canonical_url") or "",
-                r.get("status_code") or "",
-                r.get("content_type") or "",
-                r.get("meta_robots") or "",
-                r.get("x_robots_tag") or "",
-                "1" if r.get("indexable") else "0",
-                r.get("index_reason") or "",
-                r.get("body_internal_link_count") or 0,
-                "1" if r.get("has_body_internal_links") else "0",
-            ]
-        )
+        w.writerow(_page_csv_row(dict(r)))
 
     return current_app.response_class(
         buf.getvalue(),
@@ -196,40 +538,14 @@ def _export_filtered_pages_csv(filename: str, filters: DashboardFilters):
     import csv
     import io
 
-    state = load_state()
+    state = _state_for_request()
     rows, _links = _filtered_pages(state, filters)
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(
-        [
-            "url",
-            "canonical_url",
-            "status_code",
-            "content_type",
-            "meta_robots",
-            "x_robots_tag",
-            "indexable",
-            "index_reason",
-            "body_internal_link_count",
-            "has_body_internal_links",
-        ]
-    )
+    w.writerow(_PAGE_CSV_HEADER)
     for r in rows:
-        w.writerow(
-            [
-                r.get("url", ""),
-                r.get("canonical_url") or "",
-                r.get("status_code") or "",
-                r.get("content_type") or "",
-                r.get("meta_robots") or "",
-                r.get("x_robots_tag") or "",
-                "1" if r.get("indexable") else "0",
-                r.get("index_reason") or "",
-                r.get("body_internal_link_count") or 0,
-                "1" if r.get("has_body_internal_links") else "0",
-            ]
-        )
+        w.writerow(_page_csv_row(dict(r)))
 
     return current_app.response_class(
         buf.getvalue(),
@@ -270,35 +586,47 @@ def export_no_body_links_csv():
     )
 
 
+@bp.get("/history")
+def run_history():
+    return render_template("history.html", runs=list_run_history())
+
+
+@bp.get("/settings")
+def settings_page():
+    s = current_app.config["AUDIT_SETTINGS"]
+    return render_template("settings.html", settings=s)
+
+
+@bp.get("/api/health")
+def api_health():
+    return jsonify(ok=True, version=PORTAL_VERSION, service="audit-portal")
+
+
+@bp.get("/api/run-status")
+def api_run_status():
+    state = load_state()
+    run = state.get("run") or {}
+    return jsonify(
+        run=run,
+        target_base_url=(state.get("target_base_url") or "").strip(),
+    )
+
+
 @bp.get("/links")
 def page_links():
-    """
-    Show ALL body-only internal links (with anchor text) for one source page.
-    """
     url = (request.args.get("url") or "").strip()
-    state = load_state()
+    state = _state_for_request()
     all_links: List[Dict[str, object]] = list(state.get("links") or [])
 
     items = [l for l in all_links if str(l.get("from_page_url", "")) == url]
     items.sort(key=lambda l: (str(l.get("to_url", "")), str(l.get("anchor_text", ""))))
 
-    # Simple inline HTML (avoid extra template for now)
-    out = [
-        "<!doctype html><meta charset='utf-8'/>"
-        "<meta name='robots' content='noindex,nofollow,noarchive'/>"
-        "<title>Audit links</title>"
-        "<style>body{font-family:system-ui,Segoe UI,Arial;margin:20px} code{background:#f3f4f6;padding:2px 6px;border-radius:6px} table{width:100%;border-collapse:collapse} td,th{border-bottom:1px solid #ddd;padding:8px;font-size:13px;vertical-align:top} th{color:#555;text-align:left}</style>"
-    ]
-    out.append(f"<h2>Body internal links</h2><div>From: <code>{url}</code></div>")
-    out.append(f"<div style='margin:10px 0'><a href='/audit/'>← Back</a></div>")
-    out.append(f"<div>Total links: <b>{len(items)}</b></div>")
-    out.append("<table><thead><tr><th>To URL</th><th>Anchor text</th></tr></thead><tbody>")
-    for it in items:
-        to = str(it.get('to_url', ''))
-        anchor = (it.get('anchor_text') or '')
-        out.append(f"<tr><td><a href='{to}' target='_blank' rel='noreferrer'>{to}</a></td><td>{anchor}</td></tr>")
-    out.append("</tbody></table>")
-    return "\\n".join(out)
+    return render_template(
+        "links.html",
+        page_url=url,
+        items=items,
+        run_id=request.args.get("run", type=int),
+    )
 
 
 @bp.get("/export/anchors.csv")
@@ -306,7 +634,7 @@ def export_anchors_csv():
     import csv
     import io
 
-    state = load_state()
+    state = _state_for_request()
     q = list(state.get("links") or [])
 
     buf = io.StringIO()

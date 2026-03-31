@@ -1,88 +1,175 @@
 {% extends "layout.html" %}
+{% block title %}Overview · Audit Portal{% endblock %}
 
 {% block content %}
   <div class="panel">
     <div class="row" style="justify-content:space-between; gap:16px;">
-      <div style="min-width: 320px;">
-        <div style="font-weight:800; font-size:18px; margin-bottom:6px;">Target website</div>
-        <div class="muted">Yahan live domain ya local URL paste karein, phir “Recrawl now”.</div>
+      <div style="min-width:280px;">
+        <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
+        <div class="muted" style="font-size:14px; max-width:560px;">
+          Paste any site root URL. We crawl internal HTML pages, store <strong class="mono">&lt;title&gt;</strong>, <strong class="mono">meta description</strong>, Open Graph (<strong class="mono">og:title</strong> / <strong class="mono">og:description</strong>), Twitter tags, H1, canonical, robots, response time, and body internal links with anchors. Where the classic meta tags are missing, we fall back to OG/Twitter so SPAs still show usable previews.
+        </div>
       </div>
-      <form class="filters" method="post" action="/audit/target" style="margin-left:auto;">
+      {% if not viewing_archived %}
+      <form class="filters" method="post" action="{{ url_for('routes.set_target') }}" style="margin-left:auto;">
         <div>
           <label>Base URL</label>
-          <input type="text" name="base_url" value="{{ target_base_url or '' }}" placeholder="https://example.com" />
+          <input type="text" name="base_url" value="{{ target_base_url or '' }}" placeholder="https://example.com" style="min-width:280px;" />
         </div>
         <div>
-          <button type="submit">Save</button>
+          <label>&nbsp;</label>
+          <button type="submit">Save URL</button>
         </div>
       </form>
+      {% else %}
+      <div class="muted small">Archived run — target was <span class="mono">{{ target_base_url or '—' }}</span></div>
+      {% endif %}
     </div>
-
-    {% if latest_run %}
-      <div class="small muted" style="margin-top:10px;">
-        Run progress: discovered {{ latest_run.pages_discovered or 0 }} · fetched {{ latest_run.pages_fetched or 0 }}
-        {% if latest_run.error_message %}
-          · error: {{ latest_run.error_message }}
-        {% endif %}
-      </div>
-    {% endif %}
   </div>
 
-  {% if not target_base_url %}
-    <div class="panel">
-      <div class="row">
-        <div>
-          <div style="font-weight:800; font-size:18px; margin-bottom:6px;">Target URL missing</div>
-          <div class="muted">Upar “Base URL” set karein (example: <span class="mono">https://yourdomain.com</span>), phir “Recrawl now”.</div>
-        </div>
-      </div>
+  {% if not target_base_url and not viewing_archived %}
+    <div class="panel" style="margin-top:14px;">
+      <div style="font-weight:800; font-size:16px; margin-bottom:6px;">No target URL</div>
+      <div class="muted">Enter a base URL above (for example <span class="mono">https://yourdomain.com</span>), save, then run a crawl.</div>
     </div>
   {% endif %}
 
-  <div class="grid" style="margin-top:12px;">
+  {% if stats.total_pages > 0 %}
+  <div class="panel exec-summary">
+    <div class="exec-health">
+      {% if health.score is not none %}
+      <div class="health-score health-tone-{{ health.tone }}">{{ health.score }}</div>
+      <div>
+        <div class="health-grade">Snapshot score · Grade {{ health.grade }} ({{ health.label }})</div>
+        <p class="small muted" style="margin:8px 0 0; line-height:1.45; max-width:34rem;">{{ health.summary }}</p>
+      </div>
+      {% else %}
+      <div class="health-score health-tone-muted">—</div>
+      <div>
+        <div class="health-grade">Snapshot score</div>
+        <p class="small muted" style="margin:8px 0 0;">{{ health.summary }}</p>
+      </div>
+      {% endif %}
+    </div>
+    <div class="exec-http">
+      <div class="small" style="margin-bottom:10px; font-weight:650; color:var(--text);">HTTP status mix</div>
+      {% if http_dist.segments %}
+      <div class="http-stack" role="img" aria-label="HTTP status distribution">
+        {% for seg in http_dist.segments %}
+        <span class="http-stack-seg" style="width:{{ seg.pct }}%;background:{{ seg.color }};" title="{{ seg.label }}: {{ seg.count }} ({{ seg.pct }}%)"></span>
+        {% endfor %}
+      </div>
+      <div class="http-legend">
+        {% for seg in http_dist.segments %}
+        <span><i style="background:{{ seg.color }};"></i>{{ seg.label }} <strong style="color:var(--text);">{{ seg.count }}</strong></span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="small muted">No status data.</p>
+      {% endif %}
+      <p class="small muted" style="margin-top:14px; max-width:28rem;">Color segmentation matches common crawl dashboards: green 2xx, blue 3xx, red 4xx/5xx, grey failed fetch.</p>
+    </div>
+  </div>
+
+  {% if insights %}
+  <div class="panel" style="margin-top:14px;">
+    <h2 class="insights-title">Priorities &amp; next steps</h2>
+    <p class="small muted" style="margin:0; max-width:40rem;">Action-oriented list (critical first)—similar to KPI + issue workflows in SEO dashboard tooling. Use links to jump to filtered views or exports.</p>
+    <ul class="insights-list">
+      {% for it in insights %}
+      <li class="insight insight-{{ it.severity }}">
+        <div class="insight-head">{{ it.title }}</div>
+        <div class="insight-detail">{{ it.detail }}</div>
+        <a class="insight-action" href="{{ it.href }}">{{ it.action }} →</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="grid" style="margin-top:14px;">
     <div class="panel card">
-      <h3>Total pages</h3>
+      <h3>Total URLs</h3>
       <div class="big">{{ stats.total_pages }}</div>
+      <div class="small muted">in this run</div>
     </div>
     <div class="panel card">
-      <h3>Indexable</h3>
+      <h3>Indexable (heuristic)</h3>
       <div class="big" style="color:var(--good)">{{ stats.indexable }}</div>
       <div class="small">
-        <a href="/audit/?index=indexable">view list</a> · <a href="/audit/export/indexable.csv">export</a>
+        <a href="{{ url_for('routes.dashboard', q=filters.q, index='indexable', links=filters.links, anchor=filters.anchor) }}{% if viewing_archived %}&amp;run={{ archived_run_id }}{% endif %}">view</a>
+        · <a href="{{ url_for('routes.export_indexable_csv') }}{{ run_qs }}">CSV</a>
       </div>
     </div>
     <div class="panel card">
       <h3>Non-indexable</h3>
       <div class="big" style="color:var(--bad)">{{ stats.non_indexable }}</div>
       <div class="small">
-        <a href="/audit/?index=non_indexable">view list</a> · <a href="/audit/export/non_indexable.csv">export</a>
+        <a href="{{ url_for('routes.dashboard', q=filters.q, index='non_indexable', links=filters.links, anchor=filters.anchor) }}{% if viewing_archived %}&amp;run={{ archived_run_id }}{% endif %}">view</a>
+        · <a href="{{ url_for('routes.export_non_indexable_csv') }}{{ run_qs }}">CSV</a>
       </div>
     </div>
     <div class="panel card">
       <h3>With body internal links</h3>
       <div class="big">{{ stats.with_internal_links }}</div>
       <div class="small">
-        <a href="/audit/?links=has">view list</a> · <a href="/audit/export/with_body_links.csv">export</a>
+        <a href="{{ url_for('routes.dashboard', q=filters.q, index=filters.index, links='has', anchor=filters.anchor) }}{% if viewing_archived %}&amp;run={{ archived_run_id }}{% endif %}">view</a>
+        · <a href="{{ url_for('routes.export_with_body_links_csv') }}{{ run_qs }}">CSV</a>
       </div>
+    </div>
+    {% if stats.avg_ms is not none %}
+    <div class="panel card">
+      <h3>Avg response</h3>
+      <div class="big">{{ stats.avg_ms }}<span class="small" style="font-weight:600;"> ms</span></div>
+      <div class="small muted">p95: {{ stats.p95_ms }} ms</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="grid" style="margin-top:12px;">
+    <div class="panel card">
+      <h3>Missing SEO title</h3>
+      <div class="big" style="color:{% if stats.missing_title|default(0) %}var(--bad){% else %}var(--good){% endif %}">{{ stats.missing_title|default(0) }}</div>
+      <div class="small muted">no &lt;title&gt;, og:title, or twitter:title</div>
+    </div>
+    <div class="panel card">
+      <h3>Missing description</h3>
+      <div class="big" style="color:{% if stats.missing_meta_description|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.missing_meta_description|default(0) }}</div>
+      <div class="small muted">no meta desc / og / twitter text</div>
+    </div>
+    <div class="panel card">
+      <h3>Long titles (&gt;60)</h3>
+      <div class="big" style="color:{% if stats.title_over_60|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.title_over_60|default(0) }}</div>
+      <div class="small muted">may truncate in SERP</div>
+    </div>
+    <div class="panel card">
+      <h3>Long descriptions (&gt;160)</h3>
+      <div class="big" style="color:{% if stats.description_over_160|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.description_over_160|default(0) }}</div>
+      <div class="small muted">common SERP snippet band</div>
     </div>
   </div>
 
   <div class="panel" style="margin-top:12px;">
     <div class="row" style="justify-content:space-between;">
       <div class="small">
-        No body internal links: <b>{{ stats.total_pages - stats.with_internal_links }}</b>
-        · <a href="/audit/?links=none">view list</a>
-        · <a href="/audit/export/no_body_links.csv">export</a>
+        Pages without body internal links: <b>{{ stats.total_pages - stats.with_internal_links }}</b>
+        · <a href="{{ url_for('routes.dashboard', q=filters.q, index=filters.index, links='none', anchor=filters.anchor) }}{% if viewing_archived %}&amp;run={{ archived_run_id }}{% endif %}">view</a>
+        · <a href="{{ url_for('routes.export_no_body_links_csv') }}{{ run_qs }}">CSV</a>
       </div>
-      <div class="small muted">“Indexable/Non-indexable” yahan means robots+status based (search engine ka actual index confirm nahi).</div>
+      <div class="small muted">“Indexable” uses HTTP status + meta / X-Robots-Tag only—not live search index.</div>
     </div>
   </div>
 
-  <div class="panel" style="margin-top:12px;">
-    <form class="filters" method="get" action="/audit/">
+  <div class="panel" style="margin-top:12px;" id="exports">
+    <div style="font-weight:700; margin-bottom:10px;">Filters &amp; exports</div>
+    <form class="filters" method="get" action="{{ url_for('routes.dashboard') }}">
+      {% if viewing_archived %}
+      <input type="hidden" name="run" value="{{ archived_run_id }}" />
+      {% endif %}
       <div>
-        <label>URL contains</label>
-        <input type="text" name="q" value="{{ filters.q }}" placeholder="/products, /blog, etc." />
+        <label>Search URL / title / description</label>
+        <input type="text" name="q" value="{{ filters.q }}" placeholder="path, keyword in title or meta…" />
       </div>
       <div>
         <label>Index status</label>
@@ -93,82 +180,119 @@
         </select>
       </div>
       <div>
-        <label>Body internal links</label>
+        <label>Body links</label>
         <select name="links">
           <option value="" {% if not filters.links %}selected{% endif %}>All</option>
-          <option value="has" {% if filters.links == 'has' %}selected{% endif %}>Has internal links</option>
-          <option value="none" {% if filters.links == 'none' %}selected{% endif %}>No internal links</option>
+          <option value="has" {% if filters.links == 'has' %}selected{% endif %}>Has internal</option>
+          <option value="none" {% if filters.links == 'none' %}selected{% endif %}>No internal</option>
         </select>
       </div>
       <div>
         <label>Anchor contains</label>
-        <input type="text" name="anchor" value="{{ filters.anchor }}" placeholder="pricing, buy, tools..." />
+        <input type="text" name="anchor" value="{{ filters.anchor }}" placeholder="pricing, shop…" />
       </div>
       <div>
-        <button type="submit">Apply filters</button>
+        <label>&nbsp;</label>
+        <button type="submit">Apply</button>
       </div>
     </form>
-    <div class="row" style="margin-top:10px; justify-content:space-between;">
+    <div class="row" style="margin-top:12px; justify-content:space-between;">
       <div class="small">
-        Exports: <a href="/audit/export/pages.csv">pages.csv</a> · <a href="/audit/export/anchors.csv">anchors.csv</a>
+        <strong>Exports:</strong>
+        <a href="{{ url_for('routes.export_pages_csv') }}{{ run_qs }}">pages.csv</a>
+        · <a href="{{ url_for('routes.export_anchors_csv') }}{{ run_qs }}">anchors.csv</a>
       </div>
-      <div class="small muted">Note: page table is limited to 500 rows per view (filtered: {{ filtered_count }}).</div>
+      <div class="small muted">Table capped at 500 rows · filtered total: {{ filtered_count }}</div>
     </div>
   </div>
 
   <div class="panel" style="margin-top:12px;">
     <div class="row" style="justify-content:space-between; margin-bottom:10px;">
       <div style="font-weight:800;">Pages</div>
-      <div class="small">Showing {{ pages|length }} of {{ stats.total_pages }} (latest run)</div>
+      <div class="small">Showing {{ pages|length }} of {{ stats.total_pages }}</div>
     </div>
-
-    <table>
+    <div class="table-wrap">
+    <table class="data">
       <thead>
         <tr>
-          <th style="width:45%;">URL</th>
+          <th>URL / canonical</th>
+          <th>SEO title</th>
+          <th>Meta description</th>
+          <th>H1</th>
           <th>Status</th>
+          <th>Time</th>
           <th>Indexing</th>
           <th>Body links</th>
-          <th style="width:28%;">Anchor keywords (sample)</th>
+          <th>Anchor samples</th>
         </tr>
       </thead>
       <tbody>
         {% for p in pages %}
+          {% set dt = p.display_title or p.title %}
+          {% set dd = p.display_description or p.meta_description %}
+          {% set tlen = (dt or '')|length %}
+          {% set dlen = (dd or '')|length %}
           <tr>
             <td class="mono">
               <a href="{{ p.url }}" target="_blank" rel="noreferrer">{{ p.url }}</a>
               {% if p.canonical_url and p.canonical_url != p.url %}
-                <div class="small muted">canonical → <span class="mono">{{ p.canonical_url }}</span></div>
+                <div class="small muted">canonical → {{ p.canonical_url }}</div>
               {% endif %}
-              <div class="small"><a href="{{ p.audit_links_url }}">view body links</a></div>
+              <div class="small"><a href="{{ p.audit_links_url }}">body links →</a></div>
             </td>
-            <td>
-              <span class="pill {% if p.status_code and p.status_code < 400 %}good{% else %}bad{% endif %}">
-                {{ p.status_code if p.status_code else '—' }}
-              </span>
-              <div class="small muted">{{ p.content_type or '' }}</div>
-            </td>
-            <td>
-              <span class="pill {% if p.indexable %}good{% else %}bad{% endif %}">
-                {% if p.indexable %}indexable{% else %}non-indexable{% endif %}
-              </span>
-              <div class="small muted">{{ p.index_reason }}</div>
-              {% if p.meta_robots %}
-                <div class="small muted">meta robots: <span class="mono">{{ p.meta_robots }}</span></div>
-              {% endif %}
-              {% if p.x_robots_tag %}
-                <div class="small muted">x-robots-tag: <span class="mono">{{ p.x_robots_tag }}</span></div>
+            <td style="max-width:260px;">
+              {% if dt %}
+                <div style="color:var(--text); font-size:13px; line-height:1.35; margin-bottom:6px;">{{ dt[:220] }}{% if dt|length > 220 %}…{% endif %}</div>
+                <div class="row" style="gap:6px;">
+                  {% if p.title_source %}
+                  <span class="pill small">{% if p.title_source == 'title' %}&lt;title&gt;{% elif p.title_source == 'og' %}og:title{% else %}twitter:title{% endif %}</span>
+                  {% endif %}
+                  <span class="pill {% if tlen > 60 %}warn{% else %}good{% endif %}">{{ tlen }} chars</span>
+                </div>
+                {% if p.title and p.og_title and p.title != p.og_title %}
+                <div class="small muted" style="margin-top:6px;">tag: {{ (p.title or '')[:80] }}{% if p.title|length > 80 %}…{% endif %}</div>
+                {% endif %}
+              {% else %}
+                <span class="pill bad">missing</span>
               {% endif %}
             </td>
+            <td style="max-width:320px;">
+              {% if dd %}
+                <div class="muted" style="font-size:13px; line-height:1.4; margin-bottom:6px;">{{ dd[:320] }}{% if dd|length > 320 %}…{% endif %}</div>
+                <div class="row" style="gap:6px;">
+                  {% if p.description_source %}
+                  <span class="pill small">{% if p.description_source == 'meta' %}meta desc{% elif p.description_source == 'og' %}og:description{% else %}twitter:description{% endif %}</span>
+                  {% endif %}
+                  <span class="pill {% if dlen > 160 %}warn{% else %}good{% endif %}">{{ dlen }} chars</span>
+                </div>
+              {% else %}
+                <span class="pill bad">missing</span>
+              {% endif %}
+            </td>
+            <td class="small" style="max-width:140px;">
+              {% if p.h1 %}{{ p.h1[:100] }}{% if p.h1|length > 100 %}…{% endif %}{% else %}<span class="muted">—</span>{% endif %}
+            </td>
             <td>
-              <span class="pill {% if p.has_body_internal_links %}good{% else %}warn{% endif %}">
-                {{ p.body_internal_link_count }}
-              </span>
+              <span class="pill {% if p.status_code and p.status_code < 400 %}good{% else %}bad{% endif %}">{{ p.status_code if p.status_code else '—' }}</span>
+              <div class="small muted">{{ (p.content_type or '')[:40] }}</div>
+            </td>
+            <td class="mono small">{% if p.response_time_ms is not none %}{{ p.response_time_ms }} ms{% else %}—{% endif %}</td>
+            <td style="max-width:340px;">
+              <span class="pill {% if p.indexable %}good{% else %}bad{% endif %}">{% if p.indexable %}ok{% else %}blocked{% endif %}</span>
+              <div class="small" style="line-height:1.45; margin-top:8px; color:var(--text);">{{ p|index_explain }}</div>
+              {% if not p.indexable %}
+              <div class="small mono muted" style="margin-top:6px;">Signal: <span class="mono">{{ p.index_reason }}</span></div>
+              {% endif %}
+              {% if p.meta_robots and not p.indexable %}<div class="small muted mono" style="margin-top:6px;">meta: {{ p.meta_robots[:100] }}{% if p.meta_robots|length > 100 %}…{% endif %}</div>{% endif %}
+              {% if p.x_robots_tag and not p.indexable %}<div class="small muted mono">X-Robots-Tag: {{ p.x_robots_tag[:100] }}{% if p.x_robots_tag|length > 100 %}…{% endif %}</div>{% endif %}
+            </td>
+            <td>
+              <span class="pill {% if p.has_body_internal_links %}good{% else %}warn{% endif %}">{{ p.body_internal_link_count }}</span>
             </td>
             <td>
               <div class="anchors">
                 {% for a in p.anchor_sample %}
-                  <span class="pill">{{ a }}</span>
+                  <span class="pill">{{ a[:48] }}{% if a|length > 48 %}…{% endif %}</span>
                 {% endfor %}
               </div>
             </td>
@@ -176,6 +300,6 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 {% endblock %}
-

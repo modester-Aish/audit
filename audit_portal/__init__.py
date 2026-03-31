@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Flask
+from flask import Flask, redirect
 
 from .config import Settings
 from .routes import bp as routes_bp
@@ -22,6 +22,11 @@ def create_app() -> Flask:
         ensure_storage()
         ensure_auto_recrawl_scheduler()
 
-    app.register_blueprint(routes_bp)
+    app.register_blueprint(routes_bp, url_prefix="/audit")
+
+    @app.get("/")
+    def _root():
+        return redirect("/audit/")
+
     return app
 

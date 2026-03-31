@@ -342,7 +342,7 @@
       {% if vercel_serverless %}
         <div class="banner-warn" style="line-height:1.5;">
           <strong>Vercel (serverless):</strong> Crawls run <em>inside</em> the “Recrawl” request—background threads freeze after a normal response, which is why you previously saw one page or mismatched live counts.
-          This build caps each run at <span class="mono">{{ settings.crawl_page_cap() }}</span> pages (<span class="mono">VERCEL_MAX_PAGES</span> env, default 5000, same as <span class="mono">MAX_PAGES</span>). Raise or lower only if your plan’s function <strong>max duration</strong> allows (see <span class="mono">vercel.json</span>).
+          This build caps each run at <span class="mono">{{ settings.crawl_page_cap() }}</span> pages (<span class="mono">VERCEL_MAX_PAGES</span> env, default 5000, same as <span class="mono">MAX_PAGES</span>). Long crawls need a high <strong>function max duration</strong> — set it under Vercel <span class="mono">Project → Settings → Functions</span> (root <span class="mono">wsgi.py</span> Flask apps cannot use <span class="mono">vercel.json → functions</span> paths).
           Data lives under <span class="mono">/tmp</span> and can differ between instances; finished runs appear under <strong>Run history</strong>. For unlimited full-site crawls, run the app locally or on a VPS with persistent disk.
         </div>
       {% endif %}

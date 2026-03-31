@@ -107,7 +107,7 @@ def main() -> None:
     ok("health score numeric", hf.get("score") is not None, str(hf.get("score")))
 
     with app.test_request_context("/"):
-        ins = _dashboard_insights(stats, DashboardFilters("", "", "", ""), None, dist["counts"])
+        ins = _dashboard_insights(stats, DashboardFilters("", "", "", "", ""), None, dist["counts"])
     ok("insights", isinstance(ins, list) and len(ins) >= 1, str(len(ins)))
 
     p = {"index_reason": "http_404", "status_code": 404}

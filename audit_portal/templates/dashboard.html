@@ -2,15 +2,18 @@
 {% block title %}Overview · Audit Portal{% endblock %}
 
 {% block content %}
+  {% macro dash_preset(p) -%}
+    {%- if viewing_archived -%}{{ url_for('routes.dashboard', preset=p, run=archived_run_id) }}{%- else -%}{{ url_for('routes.dashboard', preset=p) }}{%- endif -%}
+  {%- endmacro %}
+  {% macro export_preset(p) -%}
+    {%- if viewing_archived -%}{{ url_for('routes.export_filtered_pages_csv', preset=p, run=archived_run_id) }}{%- else -%}{{ url_for('routes.export_filtered_pages_csv', preset=p) }}{%- endif -%}
+  {%- endmacro %}
   <div class="panel">
     <div class="row" style="justify-content:space-between; gap:16px;">
       <div style="min-width:280px;">
         <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
         <div class="muted" style="font-size:14px; max-width:560px;">
           Enter the site root. We crawl the <strong>whole site</strong>: URLs are queued from <strong>sitemaps</strong> (<span class="mono">robots.txt</span> + <span class="mono">/sitemap.xml</span>, nested indexes) <em>and</em> internal <span class="mono">&lt;a href&gt;</span> links on each HTML page-up to your max page limit. Each URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter text, H1, canonical, robots, timing, and body internal links.
-          {% if vercel_serverless %}
-            <span class="small"><strong>Vercel:</strong> each “Recrawl” may take a while—keep the tab open until the page reloads. Page cap this deployment: <span class="mono">{{ settings.crawl_page_cap() }}</span>.</span>
-          {% endif %}
         </div>
       </div>
       {% if not viewing_archived %}
@@ -64,7 +67,7 @@
       </div>
       <div class="http-legend">
         {% for seg in http_dist.segments %}
-        <span><i style="background:{{ seg.color }};"></i>{{ seg.label }} <strong style="color:var(--text);">{{ seg.count }}</strong></span>
+        <span><i style="background:{{ seg.color }};"></i><a href="{{ dash_preset(seg.preset) }}">{{ seg.label }}</a> <strong style="color:var(--text);">{{ seg.count }}</strong></span>
         {% endfor %}
       </div>
       {% else %}
@@ -91,11 +94,28 @@
   {% endif %}
   {% endif %}
 
+  {% if stats.total_pages > 0 %}
+  <div class="panel" style="margin-top:14px;" id="categories">
+    <div style="font-weight:700; margin-bottom:10px;">Browse lists by category</div>
+    <p class="small muted" style="margin:0 0 12px; max-width:44rem;">Click a label to load that URL list below (same filters as the table). Use CSV for the full filtered set, not only the first 500 rows.</p>
+    <div class="anchors" style="gap:8px;">
+      {% for key in preset_browser_order %}
+        {% if key in preset_labels %}
+        <a class="btn" style="font-size:13px; padding:8px 12px;" href="{{ dash_preset(key) }}">{{ preset_labels[key] }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="grid" style="margin-top:14px;">
     <div class="panel card">
       <h3>Total URLs</h3>
       <div class="big">{{ stats.total_pages }}</div>
       <div class="small muted">in this run</div>
+      {% if stats.total_pages > 0 %}
+      <div class="small" style="margin-top:8px;"><a href="{{ url_for('routes.dashboard', run=archived_run_id) if viewing_archived else url_for('routes.dashboard') }}">Clear filters</a></div>
+      {% endif %}
     </div>
     <div class="panel card">
       <h3>Indexable (heuristic)</h3>
@@ -135,21 +155,37 @@
       <h3>Missing SEO title</h3>
       <div class="big" style="color:{% if stats.missing_title|default(0) %}var(--bad){% else %}var(--good){% endif %}">{{ stats.missing_title|default(0) }}</div>
       <div class="small muted">no &lt;title&gt;, og:title, or twitter:title</div>
+      <div class="small" style="margin-top:8px;">
+        <a href="{{ dash_preset('missing_title') }}">view list</a>
+        · <a href="{{ export_preset('missing_title') }}">CSV</a>
+      </div>
     </div>
     <div class="panel card">
       <h3>Missing description</h3>
       <div class="big" style="color:{% if stats.missing_meta_description|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.missing_meta_description|default(0) }}</div>
       <div class="small muted">no meta desc / og / twitter text</div>
+      <div class="small" style="margin-top:8px;">
+        <a href="{{ dash_preset('missing_description') }}">view list</a>
+        · <a href="{{ export_preset('missing_description') }}">CSV</a>
+      </div>
     </div>
     <div class="panel card">
       <h3>Long titles (&gt;60)</h3>
       <div class="big" style="color:{% if stats.title_over_60|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.title_over_60|default(0) }}</div>
       <div class="small muted">may truncate in SERP</div>
+      <div class="small" style="margin-top:8px;">
+        <a href="{{ dash_preset('title_long') }}">view list</a>
+        · <a href="{{ export_preset('title_long') }}">CSV</a>
+      </div>
     </div>
     <div class="panel card">
       <h3>Long descriptions (&gt;160)</h3>
       <div class="big" style="color:{% if stats.description_over_160|default(0) %}var(--warn){% else %}var(--good){% endif %}">{{ stats.description_over_160|default(0) }}</div>
       <div class="small muted">common SERP snippet band</div>
+      <div class="small" style="margin-top:8px;">
+        <a href="{{ dash_preset('desc_long') }}">view list</a>
+        · <a href="{{ export_preset('desc_long') }}">CSV</a>
+      </div>
     </div>
   </div>
 
@@ -166,10 +202,27 @@
 
   <div class="panel" style="margin-top:12px;" id="exports">
     <div style="font-weight:700; margin-bottom:10px;">Filters &amp; exports</div>
+    {% if active_preset_label %}
+    <div class="banner-info" style="margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+      <span>Active list: <strong>{{ active_preset_label }}</strong> ({{ filtered_count }} URLs)</span>
+      <a href="{{ url_for('routes.dashboard', run=archived_run_id) if viewing_archived else url_for('routes.dashboard') }}">Clear category</a>
+    </div>
+    {% endif %}
     <form class="filters" method="get" action="{{ url_for('routes.dashboard') }}">
       {% if viewing_archived %}
       <input type="hidden" name="run" value="{{ archived_run_id }}" />
       {% endif %}
+      <div>
+        <label>Category (preset)</label>
+        <select name="preset">
+          <option value="" {% if not filters.preset %}selected{% endif %}>— None —</option>
+          {% for key in preset_browser_order %}
+            {% if key in preset_labels %}
+            <option value="{{ key }}" {% if filters.preset == key %}selected{% endif %}>{{ preset_labels[key] }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
       <div>
         <label>Search URL / title / description</label>
         <input type="text" name="q" value="{{ filters.q }}" placeholder="path, keyword in title or meta…" />
@@ -204,6 +257,7 @@
         <strong>Exports:</strong>
         <a href="{{ url_for('routes.export_pages_csv') }}{{ run_qs }}">pages.csv</a>
         · <a href="{{ url_for('routes.export_anchors_csv') }}{{ run_qs }}">anchors.csv</a>
+        · <a href="{{ export_filtered_href }}">filtered list (CSV)</a>
       </div>
       <div class="small muted">Table capped at 500 rows · filtered total: {{ filtered_count }}</div>
     </div>

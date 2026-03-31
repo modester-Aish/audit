@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -14,7 +13,7 @@ from .storage import list_run_history, load_archived_run, load_state
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.3"
+PORTAL_VERSION = "2.3.5"
 
 
 @bp.app_template_filter("index_explain")
@@ -54,7 +53,6 @@ def _inject_run_context() -> Dict[str, Any]:
         "latest_run": run,
         "target_base_url": tgt,
         "settings": st,
-        "vercel_serverless": bool(os.environ.get("VERCEL")),
     }
 
 
@@ -88,6 +86,65 @@ class DashboardFilters:
     index: str
     links: str
     anchor: str
+    preset: str  # quality / HTTP bucket shortcut; see PRESET_LABELS
+
+
+def _display_title_str(p: Dict[str, Any]) -> str:
+    return (str(p.get("display_title") or p.get("title") or "")).strip()
+
+
+def _display_desc_str(p: Dict[str, Any]) -> str:
+    return (str(p.get("display_description") or p.get("meta_description") or "")).strip()
+
+
+def _http_status_bucket(p: Dict[str, Any]) -> str:
+    sc = p.get("status_code")
+    sci: int | None = None
+    if sc is not None:
+        try:
+            sci = int(sc)
+        except (TypeError, ValueError):
+            sci = None
+    if sci is None and sc is None:
+        return "none"
+    if sci is None:
+        return "other"
+    if 200 <= sci < 300:
+        return "2xx"
+    if 300 <= sci < 400:
+        return "3xx"
+    if 400 <= sci < 500:
+        return "4xx"
+    if 500 <= sci < 600:
+        return "5xx"
+    return "other"
+
+
+PRESET_LABELS: Dict[str, str] = {
+    "missing_title": "Missing SEO title",
+    "missing_description": "Missing meta / OG / Twitter description",
+    "title_long": "Long titles (>60 chars)",
+    "desc_long": "Long descriptions (>160 chars)",
+    "http_2xx": "HTTP 2xx",
+    "http_3xx": "HTTP 3xx",
+    "http_4xx": "HTTP 4xx",
+    "http_5xx": "HTTP 5xx",
+    "http_none": "No HTTP response",
+    "http_other": "Other HTTP status",
+}
+
+PRESET_BROWSER_ORDER: Tuple[str, ...] = (
+    "missing_title",
+    "missing_description",
+    "title_long",
+    "desc_long",
+    "http_2xx",
+    "http_3xx",
+    "http_4xx",
+    "http_5xx",
+    "http_none",
+    "http_other",
+)
 
 
 _PAGE_CSV_HEADER = [
@@ -188,21 +245,37 @@ def _filtered_pages(state: Dict[str, object], filters: DashboardFilters) -> Tupl
     if filters.anchor:
         filtered = [p for p in filtered if _page_has_anchor_match(str(p.get("url", "")))]
 
+    pr = (filters.preset or "").strip()
+    if pr == "missing_title":
+        filtered = [p for p in filtered if not _display_title_str(p)]
+    elif pr == "missing_description":
+        filtered = [p for p in filtered if not _display_desc_str(p)]
+    elif pr == "title_long":
+        filtered = [p for p in filtered if len(_display_title_str(p)) > 60]
+    elif pr == "desc_long":
+        filtered = [p for p in filtered if len(_display_desc_str(p)) > 160]
+    elif pr.startswith("http_"):
+        bucket_map = {
+            "http_2xx": "2xx",
+            "http_3xx": "3xx",
+            "http_4xx": "4xx",
+            "http_5xx": "5xx",
+            "http_none": "none",
+            "http_other": "other",
+        }
+        want = bucket_map.get(pr)
+        if want is not None:
+            filtered = [p for p in filtered if _http_status_bucket(p) == want]
+
     filtered.sort(key=lambda p: str(p.get("url", "")))
     return filtered, all_links
 
 
 def _meta_quality_stats(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
-    def _disp_t(p: Dict[str, Any]) -> str:
-        return (str(p.get("display_title") or p.get("title") or "")).strip()
-
-    def _disp_d(p: Dict[str, Any]) -> str:
-        return (str(p.get("display_description") or p.get("meta_description") or "")).strip()
-
-    missing_title = sum(1 for p in pages if not _disp_t(p))
-    missing_desc = sum(1 for p in pages if not _disp_d(p))
-    title_long = sum(1 for p in pages if len(_disp_t(p)) > 60)
-    desc_long = sum(1 for p in pages if len(_disp_d(p)) > 160)
+    missing_title = sum(1 for p in pages if not _display_title_str(p))
+    missing_desc = sum(1 for p in pages if not _display_desc_str(p))
+    title_long = sum(1 for p in pages if len(_display_title_str(p)) > 60)
+    desc_long = sum(1 for p in pages if len(_display_desc_str(p)) > 160)
     return {
         "missing_title": missing_title,
         "missing_meta_description": missing_desc,
@@ -212,13 +285,18 @@ def _meta_quality_stats(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _dash_url(filters: DashboardFilters, run_id: int | None, **extra: Any) -> str:
-    args: Dict[str, Any] = dict(extra)
+    args: Dict[str, Any] = {}
     if filters.q:
         args["q"] = filters.q
     if filters.links:
         args["links"] = filters.links
     if filters.anchor:
         args["anchor"] = filters.anchor
+    if filters.index:
+        args["index"] = filters.index
+    if filters.preset:
+        args["preset"] = filters.preset
+    args.update(extra)
     if run_id is not None:
         args["run"] = run_id
     return url_for("routes.dashboard", **args)
@@ -228,27 +306,7 @@ def _http_status_distribution(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     order = ("2xx", "3xx", "4xx", "5xx", "none", "other")
     counts = {k: 0 for k in order}
     for p in pages:
-        sc = p.get("status_code")
-        sci: int | None = None
-        if sc is not None:
-            try:
-                sci = int(sc)
-            except (TypeError, ValueError):
-                sci = None
-        if sci is None and sc is None:
-            counts["none"] += 1
-        elif sci is None:
-            counts["other"] += 1
-        elif 200 <= sci < 300:
-            counts["2xx"] += 1
-        elif 300 <= sci < 400:
-            counts["3xx"] += 1
-        elif 400 <= sci < 500:
-            counts["4xx"] += 1
-        elif 500 <= sci < 600:
-            counts["5xx"] += 1
-        else:
-            counts["other"] += 1
+        counts[_http_status_bucket(p)] += 1
     total = sum(counts.values()) or 1
     colors = {
         "2xx": "#34d399",
@@ -278,6 +336,7 @@ def _http_status_distribution(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "count": c,
                 "pct": round(100.0 * c / total, 1),
                 "color": colors[k],
+                "preset": f"http_{k}",
             }
         )
     return {"segments": segments, "total": len(pages), "counts": counts}
@@ -359,7 +418,7 @@ def _dashboard_insights(
             "critical",
             "Client errors (4xx)",
             f"{c4} URLs return 4xx responses—often not indexed and bad for users.",
-            _dash_url(filters, run_id, index="non_indexable"),
+            _dash_url(filters, run_id, preset="http_4xx"),
         )
     c5 = int(http_counts.get("5xx") or 0)
     if c5 > 0:
@@ -367,7 +426,7 @@ def _dashboard_insights(
             "critical",
             "Server errors (5xx)",
             f"{c5} URLs returned 5xx—investigate stability and crawl budget waste.",
-            _dash_url(filters, run_id, index="non_indexable"),
+            _dash_url(filters, run_id, preset="http_5xx"),
         )
     nr = int(http_counts.get("none") or 0)
     if nr > 0:
@@ -375,7 +434,7 @@ def _dashboard_insights(
             "critical",
             "Failed fetches",
             f"{nr} URLs had no HTTP response (timeout, block, or network).",
-            _dash_url(filters, run_id, index="non_indexable"),
+            _dash_url(filters, run_id, preset="http_none"),
         )
     mt = int(stats.get("missing_title") or 0)
     if mt > 0:
@@ -383,8 +442,8 @@ def _dashboard_insights(
             "warning",
             "Missing titles",
             f"{mt} pages have no title tag and no og/twitter title—SERP titles may be poor.",
-            _dash_url(filters, run_id),
-            "Review table",
+            _dash_url(filters, run_id, preset="missing_title"),
+            "View list",
         )
     md = int(stats.get("missing_meta_description") or 0)
     if md > 0:
@@ -392,18 +451,26 @@ def _dashboard_insights(
             "warning",
             "Missing descriptions",
             f"{md} pages lack meta / OG / Twitter description text.",
-            _dash_url(filters, run_id),
-            "Review table",
+            _dash_url(filters, run_id, preset="missing_description"),
+            "View list",
         )
     tl = int(stats.get("title_over_60") or 0)
     dl = int(stats.get("description_over_160") or 0)
-    if tl > 0 or dl > 0:
+    if tl > 0:
         add(
             "info",
-            "Snippet length",
-            f"{tl} titles over ~60 chars; {dl} descriptions over ~160. SERPs may truncate.",
-            _dash_url(filters, run_id) + "#exports",
-            "Exports",
+            "Long titles (>60 chars)",
+            f"{tl} titles may truncate in SERPs.",
+            _dash_url(filters, run_id, preset="title_long"),
+            "View list",
+        )
+    if dl > 0:
+        add(
+            "info",
+            "Long descriptions (>160 chars)",
+            f"{dl} descriptions exceed a common snippet band.",
+            _dash_url(filters, run_id, preset="desc_long"),
+            "View list",
         )
     low_ix = n - int(stats.get("indexable") or 0)
     if low_ix == 0 and not out:
@@ -445,6 +512,7 @@ def dashboard():
         index=(request.args.get("index") or "").strip(),
         links=(request.args.get("links") or "").strip(),
         anchor=(request.args.get("anchor") or "").strip(),
+        preset=(request.args.get("preset") or "").strip(),
     )
 
     all_pages: List[Dict[str, object]] = list(state.get("pages") or [])
@@ -486,6 +554,25 @@ def dashboard():
             link += "&run=" + str(rid)
         p["audit_links_url"] = link
 
+    def _export_kw() -> Dict[str, Any]:
+        d: Dict[str, Any] = {}
+        if filters.q:
+            d["q"] = filters.q
+        if filters.index:
+            d["index"] = filters.index
+        if filters.links:
+            d["links"] = filters.links
+        if filters.anchor:
+            d["anchor"] = filters.anchor
+        if filters.preset:
+            d["preset"] = filters.preset
+        if run_id_param is not None:
+            d["run"] = run_id_param
+        return d
+
+    export_filtered_href = url_for("routes.export_filtered_pages_csv", **_export_kw())
+    active_preset_label = PRESET_LABELS.get(filters.preset, "") if filters.preset else ""
+
     return render_template(
         "dashboard.html",
         settings=settings,
@@ -498,6 +585,10 @@ def dashboard():
         http_dist=http_dist,
         health=health,
         insights=insights,
+        preset_labels=PRESET_LABELS,
+        preset_browser_order=PRESET_BROWSER_ORDER,
+        export_filtered_href=export_filtered_href,
+        active_preset_label=active_preset_label,
     )
 
 
@@ -560,7 +651,7 @@ def _export_filtered_pages_csv(filename: str, filters: DashboardFilters):
 def export_indexable_csv():
     return _export_filtered_pages_csv(
         "indexable.csv",
-        DashboardFilters(q="", index="indexable", links="", anchor=""),
+        DashboardFilters(q="", index="indexable", links="", anchor="", preset=""),
     )
 
 
@@ -568,7 +659,7 @@ def export_indexable_csv():
 def export_non_indexable_csv():
     return _export_filtered_pages_csv(
         "non_indexable.csv",
-        DashboardFilters(q="", index="non_indexable", links="", anchor=""),
+        DashboardFilters(q="", index="non_indexable", links="", anchor="", preset=""),
     )
 
 
@@ -576,7 +667,7 @@ def export_non_indexable_csv():
 def export_with_body_links_csv():
     return _export_filtered_pages_csv(
         "with_body_links.csv",
-        DashboardFilters(q="", index="", links="has", anchor=""),
+        DashboardFilters(q="", index="", links="has", anchor="", preset=""),
     )
 
 
@@ -584,8 +675,20 @@ def export_with_body_links_csv():
 def export_no_body_links_csv():
     return _export_filtered_pages_csv(
         "no_body_links.csv",
-        DashboardFilters(q="", index="", links="none", anchor=""),
+        DashboardFilters(q="", index="", links="none", anchor="", preset=""),
     )
+
+
+@bp.get("/export/filtered-pages.csv")
+def export_filtered_pages_csv():
+    filters = DashboardFilters(
+        q=(request.args.get("q") or "").strip(),
+        index=(request.args.get("index") or "").strip(),
+        links=(request.args.get("links") or "").strip(),
+        anchor=(request.args.get("anchor") or "").strip(),
+        preset=(request.args.get("preset") or "").strip(),
+    )
+    return _export_filtered_pages_csv("filtered_pages.csv", filters)
 
 
 @bp.get("/history")

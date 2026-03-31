@@ -329,6 +329,7 @@
       <nav class="nav">
         <a href="{{ url_for('routes.dashboard') }}" class="{{ 'active' if request.endpoint == 'routes.dashboard' and not viewing_archived else '' }}">Overview</a>
         <a href="{{ url_for('routes.run_history') }}" class="{{ 'active' if request.endpoint == 'routes.run_history' else '' }}">Run history</a>
+        <a href="{{ url_for('routes.dashboard') }}#categories" class="">Categories</a>
         <a href="{{ url_for('routes.dashboard') }}#exports" class="">Exports</a>
         <a href="{{ url_for('routes.settings_page') }}" class="{{ 'active' if request.endpoint == 'routes.settings_page' else '' }}">Configuration</a>
       </nav>
@@ -337,13 +338,6 @@
       {% if viewing_archived %}
         <div class="banner-info">
           Viewing archived run #{{ archived_run_id }}. <a href="{{ url_for('routes.dashboard') }}">Return to live data</a>
-        </div>
-      {% endif %}
-      {% if vercel_serverless %}
-        <div class="banner-warn" style="line-height:1.5;">
-          <strong>Vercel (serverless):</strong> Crawls run <em>inside</em> the “Recrawl” request—background threads freeze after a normal response, which is why you previously saw one page or mismatched live counts.
-          This build caps each run at <span class="mono">{{ settings.crawl_page_cap() }}</span> pages (<span class="mono">VERCEL_MAX_PAGES</span> env, default 5000, same as <span class="mono">MAX_PAGES</span>). Long crawls need a high <strong>function max duration</strong> — set it under Vercel <span class="mono">Project → Settings → Functions</span> (root <span class="mono">wsgi.py</span> Flask apps cannot use <span class="mono">vercel.json → functions</span> paths).
-          Data lives under <span class="mono">/tmp</span> and can differ between instances; finished runs appear under <strong>Run history</strong>. For unlimited full-site crawls, run the app locally or on a VPS with persistent disk.
         </div>
       {% endif %}
       <div class="top-strip">

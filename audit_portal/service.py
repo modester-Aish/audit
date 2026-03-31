@@ -115,6 +115,8 @@ def _crawl_run(run_id: int) -> None:
             request_timeout_seconds=settings.request_timeout_seconds,
             user_agent=settings.user_agent,
             crawl_delay_seconds=settings.crawl_delay_seconds,
+            use_sitemap_seed=settings.use_sitemap_seed,
+            sitemap_seed_cap=min(settings.max_pages, settings.sitemap_seed_cap),
         )
 
         pages_discovered = 0

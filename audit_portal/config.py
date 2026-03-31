@@ -28,6 +28,8 @@ class Settings:
     crawl_delay_seconds: float
     ignore_robots_txt: bool
     try_parse_html_on_error: bool
+    use_sitemap_seed: bool
+    sitemap_seed_cap: int
 
     @property
     def sqlite_uri(self) -> str:
@@ -63,5 +65,7 @@ class Settings:
             crawl_delay_seconds=float(os.getenv("CRAWL_DELAY_SECONDS", "0")),
             ignore_robots_txt=_get_bool("IGNORE_ROBOTS_TXT", True),
             try_parse_html_on_error=_get_bool("TRY_PARSE_HTML_ON_ERROR", True),
+            use_sitemap_seed=_get_bool("USE_SITEMAP_SEED", True),
+            sitemap_seed_cap=int(os.getenv("SITEMAP_SEED_CAP", "5000")),
         )
 

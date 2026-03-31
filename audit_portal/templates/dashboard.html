@@ -7,7 +7,7 @@
       <div style="min-width:280px;">
         <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
         <div class="muted" style="font-size:14px; max-width:560px;">
-          Paste any site root URL. We crawl internal HTML pages, store <strong class="mono">&lt;title&gt;</strong>, <strong class="mono">meta description</strong>, Open Graph (<strong class="mono">og:title</strong> / <strong class="mono">og:description</strong>), Twitter tags, H1, canonical, robots, response time, and body internal links with anchors. Where the classic meta tags are missing, we fall back to OG/Twitter so SPAs still show usable previews.
+          Enter the site root. We crawl the <strong>whole site</strong>: URLs are queued from <strong>sitemaps</strong> (<span class="mono">robots.txt</span> + <span class="mono">/sitemap.xml</span>, nested indexes) <em>and</em> internal <span class="mono">&lt;a href&gt;</span> links on each HTML page-up to your max page limit. Each URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter text, H1, canonical, robots, timing, and body internal links.
         </div>
       </div>
       {% if not viewing_archived %}

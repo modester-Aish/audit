@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urldefrag, urlparse, urlunparse
@@ -309,6 +310,107 @@ def extract_all_internal_links(html: str, page_url: str, base_url: str) -> Set[s
     return urls
 
 
+def _xml_local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1].lower()
+    return tag.lower()
+
+
+def _parse_sitemap_root(content: bytes) -> Tuple[bool, List[str]]:
+    """Return (is_sitemap_index, loc values)."""
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return False, []
+    root_name = _xml_local_name(root.tag)
+    is_index = "sitemapindex" in root_name
+    locs: List[str] = []
+    for el in root.iter():
+        if _xml_local_name(el.tag) == "loc":
+            t = (el.text or "").strip()
+            if t:
+                locs.append(t)
+    return is_index, locs
+
+
+def discover_urls_from_sitemaps(
+    base_url: str,
+    session: requests.Session,
+    *,
+    timeout: int,
+    max_urls: int,
+) -> List[str]:
+    """
+    Pull URLs from robots.txt Sitemap: lines and common /sitemap.xml paths, including
+    nested sitemap indexes. Use alongside HTML link crawling so JS-heavy sites still
+    get a full URL list up to max_urls.
+    """
+    if max_urls <= 0:
+        return []
+    base = normalize_url(base_url.rstrip("/"))
+    roots: List[str] = []
+    try:
+        rr = session.get(urljoin(base, "/robots.txt"), timeout=timeout)
+        if rr.status_code == 200 and rr.text:
+            for line in rr.text.splitlines():
+                s = line.strip()
+                if s.lower().startswith("sitemap:"):
+                    u = s.split(":", 1)[-1].strip()
+                    if u and is_http_url(u):
+                        roots.append(normalize_url(urldefrag(u)[0]))
+    except Exception:
+        pass
+    for path in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
+        roots.append(normalize_url(urljoin(base + "/", path)))
+
+    seen_roots: Set[str] = set()
+    ordered_roots: List[str] = []
+    for r in roots:
+        if r not in seen_roots:
+            seen_roots.add(r)
+            ordered_roots.append(r)
+
+    pages: List[str] = []
+    seen_pages: Set[str] = set()
+    pending: List[str] = list(ordered_roots)
+    pending_set: Set[str] = set(ordered_roots)
+    done_maps: Set[str] = set()
+    accept = {"Accept": "application/xml, text/xml, application/xhtml+xml, */*;q=0.8"}
+
+    while pending and len(pages) < max_urls:
+        sm_raw = pending.pop(0)
+        pending_set.discard(sm_raw)
+        sm_url = normalize_url(urldefrag(sm_raw)[0])
+        if sm_url in done_maps:
+            continue
+        done_maps.add(sm_url)
+        try:
+            r = session.get(sm_url, timeout=timeout, headers=accept)
+            if r.status_code != 200 or not r.content:
+                continue
+            is_index, locs = _parse_sitemap_root(r.content)
+        except Exception:
+            continue
+        if is_index:
+            for loc in locs:
+                u = normalize_url(urldefrag(loc)[0])
+                if is_http_url(u) and u not in done_maps and u not in pending_set:
+                    pending_set.add(u)
+                    pending.append(u)
+        else:
+            for loc in locs:
+                if len(pages) >= max_urls:
+                    break
+                u = normalize_url(urldefrag(loc)[0])
+                if not is_http_url(u) or not same_site(u, base):
+                    continue
+                if u not in seen_pages:
+                    seen_pages.add(u)
+                    pages.append(u)
+
+    return pages
+
+
 @dataclass(frozen=True)
 class FetchResult:
     url: str
@@ -330,15 +432,21 @@ class SimpleCrawler:
         request_timeout_seconds: int = 20,
         user_agent: str = "SEO-Audit-Portal/1.0",
         crawl_delay_seconds: float = 0.0,
+        use_sitemap_seed: bool = True,
+        sitemap_seed_cap: int = 5000,
     ) -> None:
         self.base_url = normalize_url(base_url.rstrip("/"))
         self.max_pages = max_pages
         self.request_timeout_seconds = request_timeout_seconds
         self.user_agent = user_agent
         self.crawl_delay_seconds = crawl_delay_seconds
+        self.use_sitemap_seed = use_sitemap_seed
+        self.sitemap_seed_cap = max(0, int(sitemap_seed_cap))
 
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"})
+        self.session.headers.update(
+            {"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+        )
 
     def fetch(self, url: str) -> FetchResult:
         url = normalize_url(url)
@@ -386,6 +494,20 @@ class SimpleCrawler:
 
         seen: Set[str] = set()
         queue: List[str] = [self.base_url]
+        queued: Set[str] = {self.base_url}
+
+        if self.use_sitemap_seed and self.sitemap_seed_cap > 0:
+            cap = min(self.max_pages, self.sitemap_seed_cap)
+            seeds = discover_urls_from_sitemaps(
+                self.base_url,
+                self.session,
+                timeout=self.request_timeout_seconds,
+                max_urls=cap,
+            )
+            for u in seeds:
+                if u != self.base_url and u not in queued:
+                    queued.add(u)
+                    queue.append(u)
 
         while queue and len(seen) < self.max_pages:
             url = queue.pop(0)
@@ -406,6 +528,7 @@ class SimpleCrawler:
             if result.html and (result.content_type.startswith("text/html") or result.content_type == ""):
                 discovered = extract_all_internal_links(result.html, result.url, self.base_url)
                 for d in discovered:
-                    if d not in seen:
+                    if d not in seen and d not in queued:
+                        queued.add(d)
                         queue.append(d)
 

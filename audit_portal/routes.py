@@ -13,7 +13,7 @@ from .storage import list_run_history, load_archived_run, load_state
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.2.0"
+PORTAL_VERSION = "2.3.0"
 
 
 @bp.app_template_filter("index_explain")

@@ -339,6 +339,13 @@
           Viewing archived run #{{ archived_run_id }}. <a href="{{ url_for('routes.dashboard') }}">Return to live data</a>
         </div>
       {% endif %}
+      {% if vercel_serverless %}
+        <div class="banner-warn" style="line-height:1.5;">
+          <strong>Vercel (serverless):</strong> Crawls run <em>inside</em> the “Recrawl” request—background threads freeze after a normal response, which is why you previously saw one page or mismatched live counts.
+          This build caps each run at <span class="mono">{{ settings.crawl_page_cap() }}</span> pages (<span class="mono">VERCEL_MAX_PAGES</span> env, default 5000, same as <span class="mono">MAX_PAGES</span>). Raise or lower only if your plan’s function <strong>max duration</strong> allows (see <span class="mono">vercel.json</span>).
+          Data lives under <span class="mono">/tmp</span> and can differ between instances; finished runs appear under <strong>Run history</strong>. For unlimited full-site crawls, run the app locally or on a VPS with persistent disk.
+        </div>
+      {% endif %}
       <div class="top-strip">
         <div class="run-meta">
           {% if latest_run %}
@@ -356,11 +363,6 @@
               <span id="live-discovered">{{ latest_run.pages_discovered or 0 }}</span> discovered ·
               <span id="live-fetched">{{ latest_run.pages_fetched or 0 }}</span> fetched
             </span>
-            {% if latest_run.status == 'running' and not viewing_archived %}
-              <div class="progress-track" title="Live progress (pages discovered)">
-                <div class="progress-bar" id="live-progress-bar"></div>
-              </div>
-            {% endif %}
             {% if latest_run.error_message %}
               <span class="pill bad">{{ latest_run.error_message[:120] }}{% if latest_run.error_message|length > 120 %}…{% endif %}</span>
             {% endif %}
@@ -379,7 +381,7 @@
           <div class="live-crawl-head">
             <span class="live-pulse-dot" aria-hidden="true"></span>
             <span class="live-progress-label" id="live-progress-label">
-              Crawling… <span id="live-count-pct">{{ latest_run.pages_discovered or 0 }}</span> / <span id="live-cap">{{ settings.max_pages|default(5000) }}</span> pages
+              Crawling… <span id="live-count-pct">{{ latest_run.pages_discovered or 0 }}</span> / <span id="live-cap">{{ settings.crawl_page_cap() }}</span> pages
             </span>
           </div>
           <div class="live-current-wrap">

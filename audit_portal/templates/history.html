@@ -5,10 +5,10 @@
   <div class="panel">
     <h2 style="margin:0 0 8px; font-size:18px;">Completed crawl runs</h2>
     <p class="muted" style="margin:0 0 16px; font-size:14px;">
-      Each finished or failed crawl is snapshotted so you can revisit results without affecting the live workspace.
+      Finished, failed, and <strong>superseded</strong> crawls (when you start a new run while one was in progress) are snapshotted so you can reopen them without changing the live workspace.
     </p>
     {% if not runs %}
-      <p class="muted">No archived runs yet. Finish a crawl to see it listed here.</p>
+      <p class="muted">No archived runs yet. Complete a crawl on the overview (or start a second crawl while one is running) to see entries here.</p>
     {% else %}
       <div class="table-wrap">
         <table class="data">

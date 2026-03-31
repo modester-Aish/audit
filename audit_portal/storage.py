@@ -99,7 +99,7 @@ def archive_completed_run(state: Dict[str, Any]) -> None:
     if rid <= 0:
         return
     status = str(run.get("status") or "")
-    if status not in ("done", "error"):
+    if status not in ("done", "error", "cancelled"):
         return
     os.makedirs(_runs_dir(), exist_ok=True)
     path = _run_snapshot_path(rid)

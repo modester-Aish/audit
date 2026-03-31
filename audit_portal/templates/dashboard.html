@@ -8,6 +8,9 @@
         <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
         <div class="muted" style="font-size:14px; max-width:560px;">
           Enter the site root. We crawl the <strong>whole site</strong>: URLs are queued from <strong>sitemaps</strong> (<span class="mono">robots.txt</span> + <span class="mono">/sitemap.xml</span>, nested indexes) <em>and</em> internal <span class="mono">&lt;a href&gt;</span> links on each HTML page-up to your max page limit. Each URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter text, H1, canonical, robots, timing, and body internal links.
+          {% if vercel_serverless %}
+            <span class="small"><strong>Vercel:</strong> each “Recrawl” may take a while—keep the tab open until the page reloads. Page cap this deployment: <span class="mono">{{ settings.crawl_page_cap() }}</span>.</span>
+          {% endif %}
         </div>
       </div>
       {% if not viewing_archived %}

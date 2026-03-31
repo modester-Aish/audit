@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -13,7 +14,7 @@ from .storage import list_run_history, load_archived_run, load_state
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.2"
+PORTAL_VERSION = "2.3.3"
 
 
 @bp.app_template_filter("index_explain")
@@ -53,6 +54,7 @@ def _inject_run_context() -> Dict[str, Any]:
         "latest_run": run,
         "target_base_url": tgt,
         "settings": st,
+        "vercel_serverless": bool(os.environ.get("VERCEL")),
     }
 
 
@@ -610,7 +612,7 @@ def api_run_status():
     return jsonify(
         run=run,
         target_base_url=(state.get("target_base_url") or "").strip(),
-        max_pages=int(getattr(st, "max_pages", 5000) or 5000),
+        max_pages=int(st.crawl_page_cap()),
     )
 
 

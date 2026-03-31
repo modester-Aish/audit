@@ -1,7 +1,10 @@
 """One-off smoke checks; run: python -m audit_portal.smoke_test"""
 from __future__ import annotations
 
+import os
+
 from audit_portal import create_app
+from audit_portal.config import Settings
 from audit_portal.crawler import (
     extract_body_internal_links,
     extract_next_data_urls,
@@ -29,6 +32,16 @@ def main() -> None:
 
     assert wsgi_app is not None
     app = create_app()
+    st0 = app.config["AUDIT_SETTINGS"]
+    ok("crawl_page_cap local", st0.crawl_page_cap() == st0.max_pages, str(st0.crawl_page_cap()))
+    os.environ["VERCEL"] = "1"
+    st1 = Settings.from_env()
+    ok(
+        "crawl_page_cap vercel clamp",
+        st1.crawl_page_cap() == min(st1.max_pages, max(1, st1.vercel_max_pages)),
+        f"{st1.crawl_page_cap()} vs max {st1.max_pages}",
+    )
+    os.environ.pop("VERCEL", None)
     c = app.test_client()
 
     r = c.get("/")

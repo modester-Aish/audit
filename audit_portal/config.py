@@ -30,6 +30,8 @@ class Settings:
     try_parse_html_on_error: bool
     use_sitemap_seed: bool
     sitemap_seed_cap: int
+    # When VERCEL=1, crawls run in the HTTP request (background threads freeze after response).
+    vercel_max_pages: int
 
     @property
     def sqlite_uri(self) -> str:
@@ -67,5 +69,12 @@ class Settings:
             try_parse_html_on_error=_get_bool("TRY_PARSE_HTML_ON_ERROR", True),
             use_sitemap_seed=_get_bool("USE_SITEMAP_SEED", True),
             sitemap_seed_cap=int(os.getenv("SITEMAP_SEED_CAP", "5000")),
+            vercel_max_pages=int(os.getenv("VERCEL_MAX_PAGES", "5000")),
         )
+
+    def crawl_page_cap(self) -> int:
+        """Max URLs to fetch this run. On Vercel, clamped so the crawl can finish inside one request."""
+        if os.environ.get("VERCEL"):
+            return min(self.max_pages, max(1, int(self.vercel_max_pages)))
+        return int(self.max_pages)
 

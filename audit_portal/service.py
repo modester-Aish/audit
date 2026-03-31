@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from datetime import datetime
@@ -38,6 +39,9 @@ def set_target_base_url(url: str) -> None:
 def ensure_auto_recrawl_scheduler() -> None:
     global _scheduler_started
     if _scheduler_started:
+        return
+    # Background threads do not keep running reliably on Vercel after the HTTP response ends.
+    if os.environ.get("VERCEL"):
         return
 
     # Capture the Flask app object for background threads.
@@ -83,6 +87,7 @@ def start_crawl_async() -> int:
             prev["run"]["finished_at"] = datetime.utcnow().isoformat()
             prev["run"]["current_url"] = None
             save_state(prev)
+            archive_completed_run(prev)
 
         state = wipe_results_keep_target()
         run_id = int(state["run"]["id"])
@@ -94,8 +99,13 @@ def start_crawl_async() -> int:
         state["run"]["pages_fetched"] = 0
         save_state(state)
 
-    # Capture app object now (request/app context exists here), then pass to thread.
     app = current_app._get_current_object()
+    # Vercel serverless freezes CPU after the response; daemon threads barely run. Crawl inline instead.
+    if os.environ.get("VERCEL"):
+        with app.app_context():
+            _crawl_run(run_id)
+        return run_id
+
     t = threading.Thread(target=_crawl_in_app_context, args=(app, run_id), daemon=True)
     t.start()
     return run_id
@@ -109,15 +119,16 @@ def _crawl_in_app_context(app, run_id: int) -> None:
 def _crawl_run(run_id: int) -> None:
     settings = current_app.config["AUDIT_SETTINGS"]
     base_url = get_target_base_url()
+    cap = settings.crawl_page_cap()
     try:
         crawler = SimpleCrawler(
             base_url,
-            max_pages=settings.max_pages,
+            max_pages=cap,
             request_timeout_seconds=settings.request_timeout_seconds,
             user_agent=settings.user_agent,
             crawl_delay_seconds=settings.crawl_delay_seconds,
             use_sitemap_seed=settings.use_sitemap_seed,
-            sitemap_seed_cap=min(settings.max_pages, settings.sitemap_seed_cap),
+            sitemap_seed_cap=min(cap, settings.sitemap_seed_cap),
             try_parse_html_on_error=settings.try_parse_html_on_error,
         )
 

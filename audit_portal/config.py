@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+from dotenv import load_dotenv
+
+
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+@dataclass(frozen=True)
+class Settings:
+    port: int
+    secret_key: str
+    base_url: str
+    require_auth: bool
+    audit_username: str
+    audit_password: str
+    auto_recrawl_minutes: int
+    max_pages: int
+    request_timeout_seconds: int
+    user_agent: str
+    crawl_delay_seconds: float
+    ignore_robots_txt: bool
+    try_parse_html_on_error: bool
+
+    @property
+    def sqlite_uri(self) -> str:
+        # Keep DB inside audit-portal folder
+        return "sqlite:///audit_portal.sqlite3"
+
+    @staticmethod
+    def from_env() -> "Settings":
+        load_dotenv()
+
+        port = int(os.getenv("PORT", "5055"))
+        secret_key = os.getenv("SECRET_KEY", "change-me")
+        base_url = os.getenv("BASE_URL", "").strip()
+        if not base_url:
+            # Allow the app to start, but dashboard will prompt to configure it.
+            base_url = ""
+
+        return Settings(
+            port=port,
+            secret_key=secret_key,
+            base_url=base_url.rstrip("/"),
+            require_auth=_get_bool("REQUIRE_AUTH", True),
+            audit_username=os.getenv("AUDIT_USERNAME", "admin"),
+            audit_password=os.getenv("AUDIT_PASSWORD", "change-me"),
+            auto_recrawl_minutes=int(os.getenv("AUTO_RECRAWL_MINUTES", "0")),
+            max_pages=int(os.getenv("MAX_PAGES", "5000")),
+            request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+            user_agent=os.getenv("USER_AGENT", "SEO-Audit-Portal/1.0"),
+            crawl_delay_seconds=float(os.getenv("CRAWL_DELAY_SECONDS", "0")),
+            ignore_robots_txt=_get_bool("IGNORE_ROBOTS_TXT", True),
+            try_parse_html_on_error=_get_bool("TRY_PARSE_HTML_ON_ERROR", True),
+        )
+

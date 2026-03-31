@@ -1,0 +1,9 @@
+.env
+data/latest.json
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.log
+instance/*.sqlite3
+instance/*.db

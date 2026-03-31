@@ -1,0 +1,181 @@
+{% extends "layout.html" %}
+
+{% block content %}
+  <div class="panel">
+    <div class="row" style="justify-content:space-between; gap:16px;">
+      <div style="min-width: 320px;">
+        <div style="font-weight:800; font-size:18px; margin-bottom:6px;">Target website</div>
+        <div class="muted">Yahan live domain ya local URL paste karein, phir “Recrawl now”.</div>
+      </div>
+      <form class="filters" method="post" action="/audit/target" style="margin-left:auto;">
+        <div>
+          <label>Base URL</label>
+          <input type="text" name="base_url" value="{{ target_base_url or '' }}" placeholder="https://example.com" />
+        </div>
+        <div>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    {% if latest_run %}
+      <div class="small muted" style="margin-top:10px;">
+        Run progress: discovered {{ latest_run.pages_discovered or 0 }} · fetched {{ latest_run.pages_fetched or 0 }}
+        {% if latest_run.error_message %}
+          · error: {{ latest_run.error_message }}
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if not target_base_url %}
+    <div class="panel">
+      <div class="row">
+        <div>
+          <div style="font-weight:800; font-size:18px; margin-bottom:6px;">Target URL missing</div>
+          <div class="muted">Upar “Base URL” set karein (example: <span class="mono">https://yourdomain.com</span>), phir “Recrawl now”.</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid" style="margin-top:12px;">
+    <div class="panel card">
+      <h3>Total pages</h3>
+      <div class="big">{{ stats.total_pages }}</div>
+    </div>
+    <div class="panel card">
+      <h3>Indexable</h3>
+      <div class="big" style="color:var(--good)">{{ stats.indexable }}</div>
+      <div class="small">
+        <a href="/audit/?index=indexable">view list</a> · <a href="/audit/export/indexable.csv">export</a>
+      </div>
+    </div>
+    <div class="panel card">
+      <h3>Non-indexable</h3>
+      <div class="big" style="color:var(--bad)">{{ stats.non_indexable }}</div>
+      <div class="small">
+        <a href="/audit/?index=non_indexable">view list</a> · <a href="/audit/export/non_indexable.csv">export</a>
+      </div>
+    </div>
+    <div class="panel card">
+      <h3>With body internal links</h3>
+      <div class="big">{{ stats.with_internal_links }}</div>
+      <div class="small">
+        <a href="/audit/?links=has">view list</a> · <a href="/audit/export/with_body_links.csv">export</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;">
+    <div class="row" style="justify-content:space-between;">
+      <div class="small">
+        No body internal links: <b>{{ stats.total_pages - stats.with_internal_links }}</b>
+        · <a href="/audit/?links=none">view list</a>
+        · <a href="/audit/export/no_body_links.csv">export</a>
+      </div>
+      <div class="small muted">“Indexable/Non-indexable” yahan means robots+status based (search engine ka actual index confirm nahi).</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;">
+    <form class="filters" method="get" action="/audit/">
+      <div>
+        <label>URL contains</label>
+        <input type="text" name="q" value="{{ filters.q }}" placeholder="/products, /blog, etc." />
+      </div>
+      <div>
+        <label>Index status</label>
+        <select name="index">
+          <option value="" {% if not filters.index %}selected{% endif %}>All</option>
+          <option value="indexable" {% if filters.index == 'indexable' %}selected{% endif %}>Indexable</option>
+          <option value="non_indexable" {% if filters.index == 'non_indexable' %}selected{% endif %}>Non-indexable</option>
+        </select>
+      </div>
+      <div>
+        <label>Body internal links</label>
+        <select name="links">
+          <option value="" {% if not filters.links %}selected{% endif %}>All</option>
+          <option value="has" {% if filters.links == 'has' %}selected{% endif %}>Has internal links</option>
+          <option value="none" {% if filters.links == 'none' %}selected{% endif %}>No internal links</option>
+        </select>
+      </div>
+      <div>
+        <label>Anchor contains</label>
+        <input type="text" name="anchor" value="{{ filters.anchor }}" placeholder="pricing, buy, tools..." />
+      </div>
+      <div>
+        <button type="submit">Apply filters</button>
+      </div>
+    </form>
+    <div class="row" style="margin-top:10px; justify-content:space-between;">
+      <div class="small">
+        Exports: <a href="/audit/export/pages.csv">pages.csv</a> · <a href="/audit/export/anchors.csv">anchors.csv</a>
+      </div>
+      <div class="small muted">Note: page table is limited to 500 rows per view (filtered: {{ filtered_count }}).</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+      <div style="font-weight:800;">Pages</div>
+      <div class="small">Showing {{ pages|length }} of {{ stats.total_pages }} (latest run)</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:45%;">URL</th>
+          <th>Status</th>
+          <th>Indexing</th>
+          <th>Body links</th>
+          <th style="width:28%;">Anchor keywords (sample)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pages %}
+          <tr>
+            <td class="mono">
+              <a href="{{ p.url }}" target="_blank" rel="noreferrer">{{ p.url }}</a>
+              {% if p.canonical_url and p.canonical_url != p.url %}
+                <div class="small muted">canonical → <span class="mono">{{ p.canonical_url }}</span></div>
+              {% endif %}
+              <div class="small"><a href="{{ p.audit_links_url }}">view body links</a></div>
+            </td>
+            <td>
+              <span class="pill {% if p.status_code and p.status_code < 400 %}good{% else %}bad{% endif %}">
+                {{ p.status_code if p.status_code else '—' }}
+              </span>
+              <div class="small muted">{{ p.content_type or '' }}</div>
+            </td>
+            <td>
+              <span class="pill {% if p.indexable %}good{% else %}bad{% endif %}">
+                {% if p.indexable %}indexable{% else %}non-indexable{% endif %}
+              </span>
+              <div class="small muted">{{ p.index_reason }}</div>
+              {% if p.meta_robots %}
+                <div class="small muted">meta robots: <span class="mono">{{ p.meta_robots }}</span></div>
+              {% endif %}
+              {% if p.x_robots_tag %}
+                <div class="small muted">x-robots-tag: <span class="mono">{{ p.x_robots_tag }}</span></div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="pill {% if p.has_body_internal_links %}good{% else %}warn{% endif %}">
+                {{ p.body_internal_link_count }}
+              </span>
+            </td>
+            <td>
+              <div class="anchors">
+                {% for a in p.anchor_sample %}
+                  <span class="pill">{{ a }}</span>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+

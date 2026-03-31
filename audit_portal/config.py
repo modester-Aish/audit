@@ -45,11 +45,15 @@ class Settings:
             # Allow the app to start, but dashboard will prompt to configure it.
             base_url = ""
 
+        # Local default: require auth. On Vercel, .env is usually missing — default off so the app
+        # loads unless you set REQUIRE_AUTH=true in the project env.
+        _require_auth_default = not bool(os.environ.get("VERCEL"))
+
         return Settings(
             port=port,
             secret_key=secret_key,
             base_url=base_url.rstrip("/"),
-            require_auth=_get_bool("REQUIRE_AUTH", True),
+            require_auth=_get_bool("REQUIRE_AUTH", _require_auth_default),
             audit_username=os.getenv("AUDIT_USERNAME", "admin"),
             audit_password=os.getenv("AUDIT_PASSWORD", "change-me"),
             auto_recrawl_minutes=int(os.getenv("AUTO_RECRAWL_MINUTES", "0")),

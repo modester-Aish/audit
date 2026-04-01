@@ -562,6 +562,25 @@ def dashboard():
             link += "&run=" + str(rid)
         p["audit_links_url"] = link
 
+        incoming_count = 0
+        incoming_anchors: List[str] = []
+        for l in all_links_for_filter:
+            if l.get("to_url") != url:
+                continue
+            incoming_count += 1
+            a = (l.get("anchor_text") or "").strip()
+            if a and a not in incoming_anchors:
+                incoming_anchors.append(a)
+            if len(incoming_anchors) >= 12:
+                break
+        p["incoming_count"] = incoming_count
+        p["incoming_anchor_sample"] = incoming_anchors
+
+        inlink = "/audit/incoming-links?url=" + quote(url, safe="")
+        if rid:
+            inlink += "&run=" + str(rid)
+        p["incoming_links_url"] = inlink
+
     def _export_kw() -> Dict[str, Any]:
         d: Dict[str, Any] = {}
         if filters.q:
@@ -750,6 +769,22 @@ def page_links():
 
     return render_template(
         "links.html",
+        page_url=url,
+        items=items,
+        run_id=request.args.get("run", type=int),
+    )
+
+@bp.get("/incoming-links")
+def page_incoming_links():
+    url = (request.args.get("url") or "").strip()
+    state = _state_for_request()
+    all_links: List[Dict[str, object]] = list(state.get("links") or [])
+
+    items = [l for l in all_links if str(l.get("to_url", "")) == url]
+    items.sort(key=lambda l: (str(l.get("from_page_url", "")), str(l.get("anchor_text", ""))))
+
+    return render_template(
+        "incoming_links.html",
         page_url=url,
         items=items,
         run_id=request.args.get("run", type=int),

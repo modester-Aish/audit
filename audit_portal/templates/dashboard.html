@@ -280,6 +280,7 @@
           <th>Time</th>
           <th>Indexing</th>
           <th>Body links</th>
+          <th>Incoming links</th>
           <th>Anchor samples</th>
         </tr>
       </thead>
@@ -296,6 +297,7 @@
                 <div class="small muted">canonical → {{ p.canonical_url }}</div>
               {% endif %}
               <div class="small"><a href="{{ p.audit_links_url }}">body links →</a></div>
+              <div class="small"><a href="{{ p.incoming_links_url }}">incoming links →</a></div>
             </td>
             <td style="max-width:260px;">
               {% if dt %}
@@ -345,6 +347,14 @@
             </td>
             <td>
               <span class="pill {% if p.has_body_internal_links %}good{% else %}warn{% endif %}">{{ p.body_internal_link_count }}</span>
+            </td>
+            <td>
+              <span class="pill {% if p.incoming_count|default(0) > 0 %}good{% else %}warn{% endif %}">{{ p.incoming_count|default(0) }}</span>
+              <div class="anchors" style="margin-top:8px;">
+                {% for a in p.incoming_anchor_sample %}
+                  <span class="pill">{{ a[:48] }}{% if a|length > 48 %}…{% endif %}</span>
+                {% endfor %}
+              </div>
             </td>
             <td>
               <div class="anchors">

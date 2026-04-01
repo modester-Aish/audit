@@ -66,7 +66,9 @@ def save_state(state: Dict[str, Any]) -> None:
 def wipe_results_keep_target() -> Dict[str, Any]:
     state = load_state()
     target = (state.get("target_base_url") or "").strip()
-    run_id = int(state.get("run", {}).get("id") or 0) + 1
+    # Pick a run id that never collides with previously archived runs.
+    # On serverless, /tmp can be reused and latest.json can reset; using the index avoids overwriting 1.json.
+    run_id = max(int(state.get("run", {}).get("id") or 0), _max_archived_run_id()) + 1
     fresh = new_state()
     fresh["target_base_url"] = target
     fresh["run"]["id"] = run_id
@@ -91,6 +93,26 @@ def _run_index_path() -> str:
 
 def _run_snapshot_path(run_id: int) -> str:
     return os.path.join(_runs_dir(), f"{run_id}.json")
+
+def _max_archived_run_id() -> int:
+    """Return max run id recorded in run history index."""
+    ensure_storage()
+    path = _run_index_path()
+    if not os.path.exists(path):
+        return 0
+    try:
+        with _lock:
+            with open(path, "r", encoding="utf-8") as f:
+                rows = json.load(f) or []
+    except Exception:
+        return 0
+    mx = 0
+    for r in rows:
+        try:
+            mx = max(mx, int((r or {}).get("id") or 0))
+        except (TypeError, ValueError):
+            pass
+    return mx
 
 
 def archive_completed_run(state: Dict[str, Any]) -> None:

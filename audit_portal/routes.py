@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -59,6 +60,7 @@ def _inject_run_context() -> Dict[str, Any]:
         "latest_run": run,
         "target_base_url": tgt,
         "settings": st,
+        "vercel_serverless": bool(os.environ.get("VERCEL")),
     }
 
 

@@ -7,6 +7,11 @@
     <p class="muted" style="margin:0 0 16px; font-size:14px;">
       Finished, failed, and <strong>superseded</strong> crawls are saved here as <strong>snapshots</strong>. Opening a row uses <span class="mono">?run=id</span> in the URL — that view stays on old data until you switch back.
     </p>
+    {% if vercel_serverless %}
+      <div class="banner-warn" style="margin-bottom:16px;">
+        <strong>Note (serverless):</strong> Run history is stored on temporary disk (<span class="mono">/tmp</span>) and can reset on new instances/deploys. If you need permanent history, self-host with persistent storage.
+      </div>
+    {% endif %}
     <p class="muted" style="margin:0 0 16px; font-size:14px;">
       <strong>Latest crawl</strong> is always on <a href="{{ url_for('routes.dashboard') }}">Overview</a> without a run id. If you still see old numbers there, click <strong>Recrawl</strong> after changing the target URL.
     </p>

@@ -14,12 +14,13 @@
           <tr><th>Area</th><th>Setting</th><th>Value</th></tr>
         </thead>
         <tbody>
-          <tr><td rowspan="7">Crawl</td><td>Max pages</td><td class="mono">{{ settings.max_pages }}</td></tr>
+          <tr><td rowspan="8">Crawl</td><td>Max pages</td><td class="mono">{{ settings.max_pages }}</td></tr>
           <tr><td>Request timeout (s)</td><td class="mono">{{ settings.request_timeout_seconds }}</td></tr>
           <tr><td>Crawl delay (s)</td><td class="mono">{{ settings.crawl_delay_seconds }}</td></tr>
           <tr><td>User-Agent</td><td class="mono small">{{ settings.user_agent }}</td></tr>
           <tr><td>Ignore robots.txt / parse HTML on errors</td><td class="mono">{{ settings.ignore_robots_txt }} / {{ settings.try_parse_html_on_error }}</td></tr>
           <tr><td>Sitemap seed (robots + sitemap.xml)</td><td class="mono">{{ settings.use_sitemap_seed }} · cap {{ settings.sitemap_seed_cap }}</td></tr>
+          <tr><td>Sitemap only (no HTML link discovery)</td><td class="mono">{{ settings.sitemap_only }} (<span class="mono">SITEMAP_ONLY</span>)</td></tr>
           <tr><td>Vercel page cap (<span class="mono">VERCEL=1</span> only)</td><td class="mono">{{ settings.vercel_max_pages }} · effective {{ settings.crawl_page_cap() }}</td></tr>
           <tr><td rowspan="2">Access</td><td>Require HTTP Basic</td><td class="mono">{{ settings.require_auth }}</td></tr>
           <tr><td>Portal username</td><td class="mono">{{ settings.audit_username }} (password not shown)</td></tr>

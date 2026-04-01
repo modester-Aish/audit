@@ -30,6 +30,8 @@ class Settings:
     try_parse_html_on_error: bool
     use_sitemap_seed: bool
     sitemap_seed_cap: int
+    # If true, only URLs from sitemaps (+ homepage seed) are fetched—no new URLs from HTML <a> / __NEXT_DATA__.
+    sitemap_only: bool
     # When VERCEL=1, crawls run in the HTTP request (background threads freeze after response).
     vercel_max_pages: int
 
@@ -69,6 +71,7 @@ class Settings:
             try_parse_html_on_error=_get_bool("TRY_PARSE_HTML_ON_ERROR", True),
             use_sitemap_seed=_get_bool("USE_SITEMAP_SEED", True),
             sitemap_seed_cap=int(os.getenv("SITEMAP_SEED_CAP", "5000")),
+            sitemap_only=_get_bool("SITEMAP_ONLY", False),
             vercel_max_pages=int(os.getenv("VERCEL_MAX_PAGES", "5000")),
         )
 

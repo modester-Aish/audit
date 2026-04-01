@@ -525,6 +525,7 @@ class SimpleCrawler:
         use_sitemap_seed: bool = True,
         sitemap_seed_cap: int = 5000,
         try_parse_html_on_error: bool = True,
+        sitemap_only: bool = False,
     ) -> None:
         self.base_url = normalize_url(base_url.rstrip("/"))
         self.max_pages = max_pages
@@ -534,6 +535,7 @@ class SimpleCrawler:
         self.use_sitemap_seed = use_sitemap_seed
         self.sitemap_seed_cap = max(0, int(sitemap_seed_cap))
         self.try_parse_html_on_error = bool(try_parse_html_on_error)
+        self.sitemap_only = bool(sitemap_only)
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -631,6 +633,10 @@ class SimpleCrawler:
 
             result = self.fetch(url)
             yield result
+
+            # Optional: skip HTML discovery so the queue stays sitemap (+ homepage) only
+            if self.sitemap_only:
+                continue
 
             # Discover more URLs from HTML (anchors + Next.js __NEXT_DATA__, even if MIME type is wrong)
             if result.html:

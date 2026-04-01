@@ -130,6 +130,7 @@ def _crawl_run(run_id: int) -> None:
             use_sitemap_seed=settings.use_sitemap_seed,
             sitemap_seed_cap=min(cap, settings.sitemap_seed_cap),
             try_parse_html_on_error=settings.try_parse_html_on_error,
+            sitemap_only=settings.sitemap_only,
         )
 
         pages_discovered = 0

@@ -19,7 +19,7 @@ from .storage import (
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.7"
+PORTAL_VERSION = "2.3.8"
 
 
 @bp.app_template_filter("index_explain")

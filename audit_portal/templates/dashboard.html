@@ -13,7 +13,7 @@
       <div style="min-width:280px;">
         <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
         <div class="muted" style="font-size:14px; max-width:560px;">
-          Enter the site root. By default we queue URLs from <strong>sitemaps</strong> and from internal <span class="mono">&lt;a href&gt;</span> on each page (up to your max). Set <span class="mono">SITEMAP_ONLY=true</span> in env to use <strong>only sitemap URLs</strong> (plus the homepage seed). Each fetched URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter, H1, canonical, robots, timing, and body internal links.
+          Enter the site root. By default we use <strong>only sitemap URLs</strong> (plus the homepage seed), up to your max. Set <span class="mono">SITEMAP_ONLY=false</span> in env to also queue URLs from internal <span class="mono">&lt;a href&gt;</span> on each page. Each fetched URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter, H1, canonical, robots, timing, and body internal links.
         </div>
       </div>
       {% if not viewing_archived %}

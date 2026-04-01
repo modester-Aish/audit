@@ -71,7 +71,8 @@ class Settings:
             try_parse_html_on_error=_get_bool("TRY_PARSE_HTML_ON_ERROR", True),
             use_sitemap_seed=_get_bool("USE_SITEMAP_SEED", True),
             sitemap_seed_cap=int(os.getenv("SITEMAP_SEED_CAP", "5000")),
-            sitemap_only=_get_bool("SITEMAP_ONLY", False),
+            # Default on: crawl sitemap URLs only unless you set SITEMAP_ONLY=false
+            sitemap_only=_get_bool("SITEMAP_ONLY", True),
             vercel_max_pages=int(os.getenv("VERCEL_MAX_PAGES", "5000")),
         )
 

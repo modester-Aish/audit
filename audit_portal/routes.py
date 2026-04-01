@@ -9,11 +9,17 @@ from flask import Blueprint, abort, current_app, jsonify, redirect, render_templ
 from .auth import require_basic_auth
 from .crawler import resolve_page_index_explanation
 from .service import get_target_base_url, set_target_base_url, start_crawl_async
-from .storage import list_run_history, load_archived_run, load_state
+from .storage import (
+    clear_all_run_history,
+    delete_archived_run,
+    list_run_history,
+    load_archived_run,
+    load_state,
+)
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.5"
+PORTAL_VERSION = "2.3.6"
 
 
 @bp.app_template_filter("index_explain")
@@ -694,6 +700,18 @@ def export_filtered_pages_csv():
 @bp.get("/history")
 def run_history():
     return render_template("history.html", runs=list_run_history())
+
+
+@bp.post("/history/delete/<int:run_id>")
+def history_delete_run(run_id: int):
+    delete_archived_run(run_id)
+    return redirect(url_for("routes.run_history"))
+
+
+@bp.post("/history/clear")
+def history_clear_all():
+    clear_all_run_history()
+    return redirect(url_for("routes.run_history"))
 
 
 @bp.get("/settings")

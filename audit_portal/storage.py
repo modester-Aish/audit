@@ -162,3 +162,45 @@ def load_archived_run(run_id: int) -> Optional[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+
+def delete_archived_run(run_id: int) -> bool:
+    """Remove one snapshot file and its index row."""
+    if run_id <= 0:
+        return False
+    ensure_storage()
+    with _lock:
+        idx_path = _run_index_path()
+        rows: List[Dict[str, Any]] = []
+        if os.path.exists(idx_path):
+            with open(idx_path, "r", encoding="utf-8") as f:
+                rows = json.load(f)
+        rows = [r for r in rows if int(r.get("id") or 0) != run_id]
+        tmp = idx_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False)
+        os.replace(tmp, idx_path)
+        snap = _run_snapshot_path(run_id)
+        if os.path.exists(snap):
+            os.remove(snap)
+    return True
+
+
+def clear_all_run_history() -> int:
+    """Delete all run snapshot files and reset index. Returns number of files removed."""
+    ensure_storage()
+    removed = 0
+    with _lock:
+        d = _runs_dir()
+        os.makedirs(d, exist_ok=True)
+        for name in os.listdir(d):
+            if not name.endswith(".json"):
+                continue
+            try:
+                os.remove(os.path.join(d, name))
+                removed += 1
+            except OSError:
+                pass
+        with open(_run_index_path(), "w", encoding="utf-8") as f:
+            json.dump([], f, ensure_ascii=False)
+    return removed
+

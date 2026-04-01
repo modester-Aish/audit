@@ -337,7 +337,8 @@
     <div class="main">
       {% if viewing_archived %}
         <div class="banner-info">
-          Viewing archived run #{{ archived_run_id }}. <a href="{{ url_for('routes.dashboard') }}">Return to live data</a>
+          You are viewing a <strong>saved snapshot</strong> (run #{{ archived_run_id }}) — this will not update when you recrawl.
+          <a href="{{ url_for('routes.dashboard') }}">Open live overview</a> for the latest crawl results (no <span class="mono">?run=</span> in the URL).
         </div>
       {% endif %}
       <div class="top-strip">

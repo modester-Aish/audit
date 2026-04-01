@@ -5,8 +5,16 @@
   <div class="panel">
     <h2 style="margin:0 0 8px; font-size:18px;">Completed crawl runs</h2>
     <p class="muted" style="margin:0 0 16px; font-size:14px;">
-      Finished, failed, and <strong>superseded</strong> crawls (when you start a new run while one was in progress) are snapshotted so you can reopen them without changing the live workspace.
+      Finished, failed, and <strong>superseded</strong> crawls are saved here as <strong>snapshots</strong>. Opening a row uses <span class="mono">?run=id</span> in the URL — that view stays on old data until you switch back.
     </p>
+    <p class="muted" style="margin:0 0 16px; font-size:14px;">
+      <strong>Latest crawl</strong> is always on <a href="{{ url_for('routes.dashboard') }}">Overview</a> without a run id. If you still see old numbers there, click <strong>Recrawl</strong> after changing the target URL.
+    </p>
+    {% if runs %}
+    <form method="post" action="{{ url_for('routes.history_clear_all') }}" style="margin:0 0 16px;" onsubmit="return confirm('Delete every saved run snapshot? This cannot be undone.');">
+      <button type="submit" style="background:rgba(248,113,113,0.12); color:var(--bad); border-color:rgba(248,113,113,0.4);">Clear all history</button>
+    </form>
+    {% endif %}
     {% if not runs %}
       <p class="muted">No archived runs yet. Complete a crawl on the overview (or start a second crawl while one is running) to see entries here.</p>
     {% else %}
@@ -33,7 +41,12 @@
                 </td>
                 <td>{{ r.pages_count|default(0) }}</td>
                 <td class="small muted">{{ r.finished_at or '—' }}</td>
-                <td><a href="{{ url_for('routes.dashboard', run=r.id) }}">Open</a></td>
+                <td class="row" style="gap:8px; flex-wrap:wrap;">
+                  <a href="{{ url_for('routes.dashboard', run=r.id) }}">Open</a>
+                  <form method="post" action="{{ url_for('routes.history_delete_run', run_id=r.id) }}" style="display:inline;" onsubmit="return confirm('Delete snapshot run #{{ r.id }}?');">
+                    <button type="submit" class="small" style="padding:4px 10px; font-size:12px; background:rgba(248,113,113,0.1); color:var(--bad); border-color:rgba(248,113,113,0.35);">Delete</button>
+                  </form>
+                </td>
               </tr>
             {% endfor %}
           </tbody>

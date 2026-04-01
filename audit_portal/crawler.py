@@ -253,17 +253,43 @@ def resolve_page_index_explanation(page: Dict[str, Any]) -> str:
     )
 
 
+# Selectors for site chrome removed before counting/storing body internal links.
+# Same list drives outbound body links + inbound (incoming) counts — nav/footer
+# links must not inflate either.
+_CHROME_STRIP_SELECTORS: Tuple[str, ...] = (
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    '[role="navigation"]',
+    '[role="banner"]',
+    '[role="contentinfo"]',
+    "#header",
+    "#footer",
+    "#site-header",
+    "#site-footer",
+    "#page-header",
+    "#page-footer",
+    "#masthead",
+    "#colophon",
+    "#navbar",
+    "#navigation",
+    "#site-navigation",
+    "#main-nav",
+    "#mobile-nav",
+    "#mobile-menu",
+    ".site-header",
+    ".site-footer",
+    ".site-branding",
+    ".main-navigation",
+    ".footer-navigation",
+)
+
+
 def _strip_layout_sections(soup: BeautifulSoup) -> BeautifulSoup:
-    # Remove common non-body sections before link extraction.
-    for sel in ["header", "footer", "nav", "aside"]:
+    for sel in _CHROME_STRIP_SELECTORS:
         for el in soup.select(sel):
             el.decompose()
-
-    # Keep this intentionally minimal to avoid removing anchors from main content.
-    # If needed later, we can add more specific selectors based on observed HTML.
-    for el in soup.select('[role="navigation"]'):
-        el.decompose()
-
     return soup
 
 

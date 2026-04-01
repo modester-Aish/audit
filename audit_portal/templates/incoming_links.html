@@ -8,22 +8,55 @@
     <p class="small" style="margin:12px 0;">
       <a href="{{ url_for('routes.dashboard', run=run_id) if run_id else url_for('routes.dashboard') }}">← Back to overview</a>
     </p>
-    <p class="small muted">Total: <strong style="color:var(--text)">{{ items|length }}</strong> links (from body internal links only).</p>
-    <div class="table-wrap" style="margin-top:14px;">
-      <table class="data">
-        <thead>
-          <tr><th>From page</th><th>Anchor text</th></tr>
-        </thead>
-        <tbody>
-          {% for it in items %}
-            <tr>
-              <td class="mono"><a href="{{ it.from_page_url }}" target="_blank" rel="noreferrer">{{ it.from_page_url }}</a></td>
-              <td>{{ it.anchor_text or '' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <p class="small muted">
+      <strong style="color:var(--text)">{{ items|length }}</strong> link row{% if items|length != 1 %}s{% endif %}
+      from <strong style="color:var(--text)">{{ grouped|length }}</strong> page{% if grouped|length != 1 %}s{% endif %}
+      (main-content body links; header/footer/nav and similar chrome are excluded — same rules as the Body links column).
+    </p>
+
+    <div style="margin-top:18px;">
+      <div style="font-weight:800; margin-bottom:10px; font-size:14px;">By source page</div>
+      {% for g in grouped %}
+        <div class="panel" style="margin-bottom:12px; padding:12px 14px;">
+          <div class="row" style="align-items:flex-start; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px;">
+              <a class="mono" href="{{ g.from_page_url }}" target="_blank" rel="noreferrer" style="font-size:13px; word-break:break-all;">{{ g.from_page_url }}</a>
+            </div>
+            <span class="pill {% if g.link_count %}good{% else %}warn{% endif %}">{{ g.link_count }} incoming</span>
+          </div>
+          <div class="anchors" style="margin-top:10px;">
+            {% for a in g.anchors %}
+              {% if a %}
+                <span class="pill">{{ a }}</span>
+              {% else %}
+                <span class="pill muted">(empty anchor)</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+      {% if not grouped %}
+        <p class="muted small">No incoming body links recorded for this URL in this crawl.</p>
+      {% endif %}
     </div>
+
+    <details style="margin-top:20px;">
+      <summary class="small" style="cursor:pointer; font-weight:600;">Flat list (every &lt;a&gt; row)</summary>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table class="data">
+          <thead>
+            <tr><th>From page</th><th>Anchor text</th></tr>
+          </thead>
+          <tbody>
+            {% for it in items %}
+              <tr>
+                <td class="mono"><a href="{{ it.from_page_url }}" target="_blank" rel="noreferrer">{{ it.from_page_url }}</a></td>
+                <td>{% if it.anchor_text %}{{ it.anchor_text }}{% else %}<span class="muted">(empty)</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
   </div>
 {% endblock %}
-

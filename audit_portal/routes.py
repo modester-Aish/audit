@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -20,7 +21,7 @@ from .storage import (
 
 bp = Blueprint("routes", __name__)
 
-PORTAL_VERSION = "2.3.8"
+PORTAL_VERSION = "2.3.11"
 
 
 @bp.app_template_filter("index_explain")
@@ -562,19 +563,21 @@ def dashboard():
             link += "&run=" + str(rid)
         p["audit_links_url"] = link
 
-        incoming_count = 0
-        incoming_anchors: List[str] = []
+        incoming_by_from: Dict[str, List[str]] = defaultdict(list)
         for l in all_links_for_filter:
             if l.get("to_url") != url:
                 continue
-            incoming_count += 1
-            a = (l.get("anchor_text") or "").strip()
-            if a and a not in incoming_anchors:
-                incoming_anchors.append(a)
-            if len(incoming_anchors) >= 12:
-                break
+            fp = str(l.get("from_page_url", ""))
+            incoming_by_from[fp].append((l.get("anchor_text") or "").strip())
+
+        incoming_count = sum(len(v) for v in incoming_by_from.values())
         p["incoming_count"] = incoming_count
-        p["incoming_anchor_sample"] = incoming_anchors
+        p["incoming_source_count"] = len(incoming_by_from)
+        preview_sources = sorted(incoming_by_from.items(), key=lambda x: (-len(x[1]), x[0]))[:4]
+        p["incoming_preview"] = [
+            {"from_page_url": fp, "link_count": len(anchors), "anchors": anchors[:10]}
+            for fp, anchors in preview_sources
+        ]
 
         inlink = "/audit/incoming-links?url=" + quote(url, safe="")
         if rid:
@@ -783,10 +786,21 @@ def page_incoming_links():
     items = [l for l in all_links if str(l.get("to_url", "")) == url]
     items.sort(key=lambda l: (str(l.get("from_page_url", "")), str(l.get("anchor_text", ""))))
 
+    by_from: Dict[str, List[str]] = defaultdict(list)
+    for l in items:
+        fp = str(l.get("from_page_url", ""))
+        by_from[fp].append((l.get("anchor_text") or "").strip())
+
+    grouped = [
+        {"from_page_url": fp, "link_count": len(anchors), "anchors": anchors}
+        for fp, anchors in sorted(by_from.items(), key=lambda x: (-len(x[1]), x[0]))
+    ]
+
     return render_template(
         "incoming_links.html",
         page_url=url,
         items=items,
+        grouped=grouped,
         run_id=request.args.get("run", type=int),
     )
 

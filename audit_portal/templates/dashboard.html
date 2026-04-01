@@ -13,7 +13,7 @@
       <div style="min-width:280px;">
         <div style="font-weight:800; font-size:17px; margin-bottom:6px;">Target website</div>
         <div class="muted" style="font-size:14px; max-width:560px;">
-          Enter the site root. By default we use <strong>only sitemap URLs</strong> (plus the homepage seed), up to your max. Set <span class="mono">SITEMAP_ONLY=false</span> in env to also queue URLs from internal <span class="mono">&lt;a href&gt;</span> on each page. Each fetched URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter, H1, canonical, robots, timing, and body internal links.
+          Enter the site root. By default we use <strong>only sitemap URLs</strong> (plus the homepage seed), up to your max. Set <span class="mono">SITEMAP_ONLY=false</span> in env to also queue URLs from internal <span class="mono">&lt;a href&gt;</span> on each page. Each fetched URL gets <span class="mono">&lt;title&gt;</span>, meta / OG / Twitter, H1, canonical, robots, timing, and body internal links (header, footer, nav, and common chrome blocks stripped — same basis for <strong>incoming</strong> counts).
         </div>
       </div>
       {% if not viewing_archived %}
@@ -350,11 +350,32 @@
             </td>
             <td>
               <span class="pill {% if p.incoming_count|default(0) > 0 %}good{% else %}warn{% endif %}">{{ p.incoming_count|default(0) }}</span>
-              <div class="anchors" style="margin-top:8px;">
-                {% for a in p.incoming_anchor_sample %}
-                  <span class="pill">{{ a[:48] }}{% if a|length > 48 %}…{% endif %}</span>
-                {% endfor %}
-              </div>
+              {% if p.incoming_source_count|default(0) %}
+                <div class="small muted" style="margin-top:4px;">from {{ p.incoming_source_count }} page{% if p.incoming_source_count != 1 %}s{% endif %}</div>
+              {% endif %}
+              {% for src in p.incoming_preview|default([]) %}
+                <div style="margin-top:8px; font-size:12px; line-height:1.4;">
+                  <div class="mono muted" style="word-break:break-all;">
+                    <a href="{{ src.from_page_url }}" target="_blank" rel="noreferrer">{{ src.from_page_url[:72] }}{% if src.from_page_url|length > 72 %}…{% endif %}</a>
+                    <span class="pill small">{{ src.link_count }}×</span>
+                  </div>
+                  <div class="anchors" style="margin-top:6px;">
+                    {% for a in src.anchors %}
+                      {% if a %}
+                        <span class="pill">{{ a[:48] }}{% if a|length > 48 %}…{% endif %}</span>
+                      {% else %}
+                        <span class="pill muted">(empty)</span>
+                      {% endif %}
+                    {% endfor %}
+                    {% if src.link_count > (src.anchors|length) %}
+                      <span class="pill muted">+{{ src.link_count - (src.anchors|length) }} more on detail</span>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+              {% if p.incoming_source_count|default(0) > (p.incoming_preview|default([])|length) %}
+                <div class="small muted" style="margin-top:6px;">+{{ p.incoming_source_count - (p.incoming_preview|default([])|length) }} other page(s) — <a href="{{ p.incoming_links_url }}">all incoming →</a></div>
+              {% endif %}
             </td>
             <td>
               <div class="anchors">
